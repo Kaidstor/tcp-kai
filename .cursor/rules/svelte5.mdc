@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Svelte 5
+
+Теперь вместо использования:
+$: double = someVar * 2;
+
+используется:
+let double = $derived(someVar * 2);
