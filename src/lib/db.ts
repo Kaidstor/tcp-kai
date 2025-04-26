@@ -31,12 +31,28 @@ export async function getRequests(collectionId: number): Promise<any[]> {
     [collectionId]
   );
 }
-export async function addRequest(collectionId: number, name: string, url: string, cmd: string, body: string): Promise<void> {
+export async function addRequest(collectionId: number, name: string, url: string, cmd: string, body: string): Promise<number> {
   await ensureDb();
   await db.execute(
     'INSERT INTO requests (collection_id, name, url, cmd, body) VALUES (?, ?, ?, ?, ?);',
     [collectionId, name, url, cmd, body]
   );
+  // Get the last inserted ID
+  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
+  return idResult[0].id;
+}
+export async function updateRequest({requestId, name, url, cmd, body}: {requestId: number, name: string, url: string, cmd: string, body: string}): Promise<void> {
+  await ensureDb();
+  await db.execute(
+    'UPDATE requests SET name = ?, url = ?, cmd = ?, body = ? WHERE id = ?;',
+    [name, url, cmd, body, requestId]
+  );
+}
+
+// Удаление запроса (и связанной истории благодаря CASCADE)
+export async function deleteRequest(requestId: number): Promise<void> {
+  await ensureDb();
+  await db.execute('DELETE FROM requests WHERE id = ?;', [requestId]);
 }
 
 // History
@@ -47,12 +63,36 @@ export async function getHistory(requestId: number): Promise<any[]> {
     [requestId]
   );
 }
-export async function addHistory(requestId: number, sent: string, received: string): Promise<void> {
+
+// Получение списка истории без полных данных запросов и ответов
+export async function getHistoryList(requestId: number): Promise<any[]> {
+  await ensureDb();
+  return await db.select(
+    'SELECT id, timestamp FROM history WHERE request_id = ? ORDER BY timestamp DESC;',
+    [requestId]
+  );
+}
+
+// Получение конкретной записи истории по ID
+export async function getHistoryItem(historyId: number): Promise<any> {
+  await ensureDb();
+  const items: { id: number; sent: string; received: string; timestamp: string }[] = await db.select(
+    'SELECT id, sent, received, timestamp FROM history WHERE id = ?;',
+    [historyId]
+  );
+  return items.length > 0 ? items[0] : null;
+}
+
+export async function addHistory(requestId: number, sent: string, received: string): Promise<number> {
   await ensureDb();
   await db.execute(
     'INSERT INTO history (request_id, sent, received) VALUES (?, ?, ?);',
     [requestId, sent, received]
   );
+  
+  // Получаем ID вставленной записи
+  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
+  return idResult[0].id;
 }
 
 // Delete a history entry
@@ -133,4 +173,23 @@ export async function updateEnvPackName(
 export async function updateCollectionPack(collectionId: number, packId: number | null): Promise<void> {
   await ensureDb();
   await db.execute('UPDATE collections SET pack_id = ? WHERE id = ?;', [packId, collectionId]);
+}
+
+// Настройки приложения
+export async function getSetting(key: string): Promise<string | null> {
+  await ensureDb();
+  const results = await db.select<{ value: string | null }[]>(
+    'SELECT value FROM settings WHERE key = ?;',
+    [key]
+  );
+  
+  return results.length > 0 ? results[0].value : null;
+}
+
+export async function updateSetting(key: string, value: string | number | null): Promise<void> {
+  await ensureDb();
+  await db.execute(
+    'UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?;',
+    [value === null ? null : String(value), key]
+  );
 } 

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { Dialog, Separator, Label } from "bits-ui";
-  import { X, Tag, Server, Terminal } from "lucide-svelte";
+  import { Dialog, Separator } from "bits-ui";
+  import { X, Terminal } from "lucide-svelte";
 
   export let open: boolean;
   export let onConfirm: (data: {
@@ -11,18 +11,23 @@
   }) => void;
   export let onCancel: () => void;
 
-  let name = "";
-  let url = "";
   let cmd = "";
-  let body = "";
 
   function handleConfirm() {
-    onConfirm({ name, url, cmd, body });
-    name = url = cmd = body = "";
+    if (cmd.trim()) {
+      // Use cmd as the name and set default URL
+      onConfirm({
+        name: cmd,
+        url: "{{host}}:{{port}}",
+        cmd,
+        body: "{}",
+      });
+      cmd = "";
+    }
   }
 
   function handleClose() {
-    name = url = cmd = body = "";
+    cmd = "";
     onCancel();
   }
 </script>
@@ -39,55 +44,18 @@
       <Separator.Root class="mb-4" />
       <div class="flex flex-col space-y-4 mb-4">
         <div class="flex flex-col gap-2">
-          <!-- <Label.Root for="reqName">Name</Label.Root> -->
-          <div class="relative">
-            <input
-              id="reqName"
-              bind:value={name}
-              placeholder="Name"
-              class="w-full bg-stone-700 p-2 rounded pr-8"
-            />
-            <Tag
-              class="absolute right-2 top-1/2 transform -translate-y-1/2 text-stone-400"
-            />
-          </div>
-        </div>
-        <div class="flex flex-col gap-2">
-          <!-- <Label.Root for="reqUrl">Host:Port</Label.Root> -->
-          <div class="relative">
-            <input
-              id="reqUrl"
-              bind:value={url}
-              placeholder="Host:Port"
-              class="w-full bg-stone-700 p-2 rounded pr-8"
-            />
-            <Server
-              class="absolute right-2 top-1/2 transform -translate-y-1/2 text-stone-400"
-            />
-          </div>
-        </div>
-        <div class="flex flex-col gap-2">
-          <!-- <Label.Root for="reqCmd">CMD</Label.Root> -->
           <div class="relative">
             <input
               id="reqCmd"
               bind:value={cmd}
               placeholder="CMD"
               class="w-full bg-stone-700 p-2 rounded pr-8"
+              onkeydown={(e) => e.key === "Enter" && handleConfirm()}
             />
             <Terminal
               class="absolute right-2 top-1/2 transform -translate-y-1/2 text-stone-400"
             />
           </div>
-        </div>
-        <div class="flex flex-col gap-2">
-          <!-- <Label.Root for="reqBody">Body</Label.Root> -->
-          <textarea
-            id="reqBody"
-            bind:value={body}
-            placeholder="Body"
-            class="w-full bg-stone-700 p-2 rounded h-24"
-          ></textarea>
         </div>
       </div>
       <div class="flex justify-end space-x-2">

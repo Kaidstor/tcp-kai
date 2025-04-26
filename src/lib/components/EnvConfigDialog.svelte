@@ -21,26 +21,35 @@
     updateEnvPackName,
     updateCollectionPack,
   } from "$lib/db";
-  import type { EnvPack, EnvVar } from "$lib/types";
-  export let open: boolean;
-  export let collectionId: number | null;
-  export let onSelect: (packId: number | null) => void;
-  export let onCancel: () => void;
 
-  let packs: EnvPack[] = [];
-  let selectedPack: number | null = null;
-  let newPackName = "";
-  let isEditingPackName = false;
-  let editedPackName = "";
+  import type { EnvPack, EnvVar } from "$lib/types";
+
+  interface Props {
+    open: boolean;
+    collectionId: number | null;
+    onSelect: (packId: number | null) => void;
+    onCancel: () => void;
+  }
+
+  let { open, collectionId, onSelect, onCancel }: Props = $props();
+
+  let packs: EnvPack[] = $state([]);
+  let selectedPack: number | null = $state(null);
+  let isEditingPackName = $state(false);
+  let editedPackName = $state("");
 
   // Track original and edited variables
-  let originalVars: EnvVar[] = [];
-  let vars: EnvVar[] = [];
-  let hasChanges: boolean = false;
+  let originalVars: EnvVar[] = $state([]);
+  let vars: EnvVar[] = $state([]);
 
   // New variable input
-  let newKey = "";
-  let newValue = "";
+  let newKey = $state("");
+  let newValue = $state("");
+
+  // Check if there are unsaved changes
+  let hasChanges = $derived(
+    JSON.stringify(vars) !== JSON.stringify(originalVars)
+  );
 
   function handleAddPackConfirm(name: string) {
     if (name) {
@@ -67,18 +76,13 @@
       return;
     }
     const pack = await getEnvPack(selectedPack);
-    originalVars = pack?.vars ? [...pack.vars] : [];
-    vars = pack?.vars ? [...pack.vars] : [];
-    hasChanges = false;
+    originalVars = pack?.vars ?? [];
+    vars = pack?.vars ?? [];
   }
 
   function resetVars() {
-    vars = [...originalVars];
-    hasChanges = false;
+    vars = originalVars;
   }
-
-  // Check if there are unsaved changes
-  $: hasChanges = JSON.stringify(vars) !== JSON.stringify(originalVars);
 
   async function handleDeletePack(id: number) {
     await deleteEnvPack(id);
@@ -107,6 +111,9 @@
     vars = [...vars, { key: newKey, value: newValue }];
     newKey = "";
     newValue = "";
+
+    // Явно проверяем, есть ли изменения
+    hasChanges = JSON.stringify(vars) !== JSON.stringify(originalVars);
   }
 
   function handleUpdateVar(
@@ -114,8 +121,11 @@
     field: "key" | "value",
     value: string
   ) {
+    // Создаем полностью новый массив для корректного отслеживания изменений
     const updatedVars = [...vars];
-    updatedVars[index][field] = value;
+    // Создаем новый объект для измененной переменной
+    updatedVars[index] = { ...updatedVars[index], [field]: value };
+    // Обновляем весь массив
     vars = updatedVars;
   }
 
@@ -127,7 +137,6 @@
     if (selectedPack !== null) {
       await updateEnvPack(selectedPack, vars);
       originalVars = [...vars];
-      hasChanges = false;
     }
   }
 
@@ -145,8 +154,8 @@
         // Notify parent about selection first
         onSelect(selectedPack);
 
-        // Set dialog to closed state directly
-        open = false;
+        // Don't set dialog state directly, let parent component handle it
+        // open = false; // <-- Удаляем эту строку
       } catch (error) {
         console.error("Error activating environment pack:", error);
       }
@@ -161,7 +170,9 @@
     onCancel();
   }
 
-  $: if (open) loadPacks();
+  $effect(() => {
+    if (open) loadPacks();
+  });
 </script>
 
 <Dialog.Root bind:open onOpenChange={(v) => !v && cancel()}>

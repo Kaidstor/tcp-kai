@@ -40,6 +40,25 @@ CREATE TABLE IF NOT EXISTS history (
 "#.into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 2,
+            description: "add_settings_table".into(),
+            sql: r#"
+
+CREATE TABLE IF NOT EXISTS settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  value TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+-- Индекс для быстрого поиска по ключу
+CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
+-- Начальные настройки
+INSERT OR IGNORE INTO settings (key, value) VALUES ('last_collection_id', NULL);
+INSERT OR IGNORE INTO settings (key, value) VALUES ('last_request_id', NULL);
+"#.into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
