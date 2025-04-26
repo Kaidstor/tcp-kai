@@ -1,5 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
-import type { Collection, EnvPack } from './types';
+import type { Collection, EnvPack, HistoryEntry } from './types';
 
 let db: Database;
 
@@ -56,7 +56,7 @@ export async function deleteRequest(requestId: number): Promise<void> {
 }
 
 // History
-export async function getHistory(requestId: number): Promise<any[]> {
+export async function getHistory(requestId: number): Promise<HistoryEntry[]> {
   await ensureDb();
   return await db.select(
     'SELECT id, sent, received, timestamp FROM history WHERE request_id = ? ORDER BY timestamp DESC;',
@@ -74,10 +74,10 @@ export async function getHistoryList(requestId: number): Promise<any[]> {
 }
 
 // Получение конкретной записи истории по ID
-export async function getHistoryItem(historyId: number): Promise<any> {
+export async function getHistoryItem(historyId: number): Promise<HistoryEntry | null> {
   await ensureDb();
-  const items: { id: number; sent: string; received: string; timestamp: string }[] = await db.select(
-    'SELECT id, sent, received, timestamp FROM history WHERE id = ?;',
+  const items: HistoryEntry[] = await db.select(
+    'SELECT * FROM history WHERE id = ?;',
     [historyId]
   );
   return items.length > 0 ? items[0] : null;

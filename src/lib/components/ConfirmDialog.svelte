@@ -25,7 +25,7 @@
 
 <Dialog.Root bind:open onOpenChange={(v) => !v && onCancel()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 bg-black/50 z-40" />
+    <Dialog.Overlay class="fixed inset-0 bg-black/50 z-50" />
     <Dialog.Content
       class="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-stone-800 text-white rounded p-6 w-full max-w-md z-50 shadow-xl"
     >

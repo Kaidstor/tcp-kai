@@ -1,48 +1,40 @@
 <script lang="ts">
-  import { ScrollArea } from "bits-ui";
-  import { exportToXLSX, processEnvVars } from "../lib/utils";
-  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-  import CollectionDropdown from "../lib/components/CollectionDropdown.svelte";
   import { onMount } from "svelte";
   import {
     getCollections,
-    addCollection as dbAddCollection,
-    getHistory,
-    getHistoryList,
-    getHistoryItem,
-    deleteHistory,
     getRequests,
-    updateRequest,
-    deleteRequest,
+    addCollection as dbAddCollection,
     addRequest as dbAddRequest,
-    addHistory as dbAddHistory,
-    getEnvPack,
-    getSetting,
+    updateRequest,
+    getHistoryList,
+    deleteHistory,
+    getHistoryItem,
     updateSetting,
+    getSetting,
+    getEnvPack,
+    deleteRequest,
+    addHistory as dbAddHistory,
+    deleteCollection as dbDeleteCollection,
   } from "$lib/db";
-  import type {
-    HistoryEntry,
-    RequestItem,
-    Collection,
-    EnvVar,
-  } from "$lib/types";
+  import { invoke } from "@tauri-apps/api/core";
+  import { Trash2, History } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
-  import { History, Trash2, X } from "lucide-svelte";
-  import AddCollectionDialog from "$lib/components/AddCollectionDialog.svelte";
+  import StoneMonacoEditor from "$lib/components/StoneMonacoEditor.svelte";
   import AddRequestDialog from "$lib/components/AddRequestDialog.svelte";
-  import CopyButton from "$lib/components/CopyButton.svelte";
+  import AddCollectionDialog from "$lib/components/AddCollectionDialog.svelte";
   import EnvConfigDialog from "$lib/components/EnvConfigDialog.svelte";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import StoneMonacoEditor from "$lib/components/StoneMonacoEditor.svelte";
+  import CopyButton from "$lib/components/CopyButton.svelte";
   import EnvVarInput from "$lib/components/EnvVarInput.svelte";
+  import CommandMenu from "$lib/components/CommandMenu.svelte";
+  import type { Collection, RequestItem, EnvVar } from "$lib/types";
+  import { processEnvVars } from "$lib/utils";
+
+  let collections: Collection[] = $state([]);
+  let selectedCollection: number | null = $state(null);
 
   let requestEditor: any | null = $state(null);
   let responseEditor: any | null = $state(null);
-
-  // reactive application state
-  let collections: Collection[] = $state([]);
-  let selectedCollection: number | null = $state(null);
 
   let requests: RequestItem[] = $state([]);
   let reqSearch = $state("");
@@ -94,10 +86,11 @@
     let varsArr: EnvVar[] = [];
     if (packId !== null) {
       const pack = await getEnvPack(packId);
-      varsArr = pack?.vars ?? [];
+      envVars = pack?.vars ?? [];
+      envLabel = pack?.name ?? "no ENV";
+    } else {
+      envLabel = "no ENV";
     }
-    envVars = varsArr;
-    envLabel = varsArr.length ? varsArr.map((e) => e.key).join(", ") : "no ENV";
   }
 
   function openEnvConfig() {
@@ -121,6 +114,38 @@
     const pid = coll?.pack_id ?? null;
     envPackId = pid;
     await refreshEnvVars(pid);
+  }
+
+  // Удаление коллекции
+  async function handleDeleteCollection(colId: number) {
+    try {
+      await dbDeleteCollection(colId);
+
+      // Обновляем список коллекций
+      collections = await getCollections();
+
+      // Если удалили текущую коллекцию, выбираем первую доступную
+      if (selectedCollection === colId) {
+        selectedCollection = collections.length > 0 ? collections[0].id : null;
+
+        if (selectedCollection) {
+          await selectCollection(selectedCollection);
+        } else {
+          // Если коллекций больше нет, очищаем всё
+          requests = [];
+          selectedRequest = null;
+          url = "";
+          cmd = "";
+          sendData = "";
+          receivedData = "";
+          history = [];
+          statusText = "Ready";
+        }
+      }
+    } catch (error) {
+      console.error("Ошибка при удалении коллекции:", error);
+      alert("Не удалось удалить коллекцию");
+    }
   }
 
   function selectRequest(req: RequestItem) {
@@ -396,12 +421,13 @@
   <aside
     class="w-64 bg-stone-800 border-r border-stone-700 p-4 overflow-y-auto"
   >
-    <CollectionDropdown
+    <CommandMenu
       {collections}
-      selected={selectedCollection}
-      selectText="Выберите коллекцию"
-      onSelect={selectCollection}
-      onAdd={openAdd}
+      {selectedCollection}
+      onSelectCollection={selectCollection}
+      onAddCollection={openAdd}
+      onOpenEnvConfig={openEnvConfig}
+      onDeleteCollection={handleDeleteCollection}
     />
 
     <h2
