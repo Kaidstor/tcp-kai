@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import {
     getCollections,
     getRequests,
@@ -17,7 +16,13 @@
     deleteCollection as dbDeleteCollection,
   } from "$lib/db";
   import { invoke } from "@tauri-apps/api/core";
-  import { Trash2, History } from "lucide-svelte";
+  import {
+    Trash2,
+    History,
+    FileJson,
+    FileOutput,
+    Settings,
+  } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
   import StoneMonacoEditor from "$lib/components/StoneMonacoEditor.svelte";
   import AddRequestDialog from "$lib/components/AddRequestDialog.svelte";
@@ -35,6 +40,8 @@
 
   let requestEditor: any | null = $state(null);
   let responseEditor: any | null = $state(null);
+
+  let isRequestEditorFocused: boolean = $state(false);
 
   let requests: RequestItem[] = $state([]);
   let reqSearch = $state("");
@@ -404,8 +411,22 @@
     }
   }
 
-  onMount(async () => {
-    await restoreAppState();
+  $effect(() => {
+    restoreAppState();
+
+    // Add keyboard shortcut listener
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd+E (Mac) or Ctrl+E (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === "e") {
+        e.preventDefault();
+        openEnvConfig();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   });
 
   $effect(() => {
@@ -444,13 +465,13 @@
       <input
         placeholder="Search requests..."
         bind:value={reqSearch}
-        class="w-full mb-2 py-1 px-2 bg-stone-700 rounded"
+        class="w-full mb-2 py-1 px-2 bg-stone-700 rounded h-10"
       />
     {/if}
     {#each filteredRequests as req}
       <div
-        class="group relative w-full flex items-center hover:bg-stone-700 rounded"
-        class:bg-stone-900={req === selectedRequest}
+        class="group relative w-full flex items-center hover:bg-stone-600 rounded"
+        class:bg-stone-700={req === selectedRequest}
       >
         <button
           class="w-full text-left cursor-pointer p-2 pr-8 flex-grow truncate"
@@ -475,20 +496,20 @@
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Request Builder -->
       <div
-        class={`p-4 border-b border-stone-700 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-4`}
+        class={`p-4 bg-stone-800 border-b border-stone-700 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-4`}
       >
         <div class="flex flex-col gap-1">
           <EnvVarInput
             bind:value={url}
             placeholder="Host:Port"
             {envVars}
-            className="bg-stone-800 rounded w-full"
+            className="rounded w-full"
           />
         </div>
         <input
           bind:value={cmd}
           placeholder="CMD"
-          class="bg-stone-800 p-2 rounded"
+          class="bg-stone-700 p-2 rounded"
         />
         <button
           onclick={() => (isSending ? stopQuery() : sendQuery())}
@@ -549,45 +570,62 @@
         </button>
       </div>
 
-      <div class="flex flex-col gap-4 flex-1 overflow-hidden p-4">
+      <div class="flex flex-col flex-1 overflow-hidden">
         <!-- Body Editor -->
-        <div class="flex-1 overflow-hidden rounded-lg flex flex-col">
-          <h3 class="font-semibold mb-2">Request Body</h3>
+        <div class="flex-1 overflow-hidden flex flex-col relative">
           <StoneMonacoEditor
             bind:this={requestEditor}
+            bind:isFocused={isRequestEditorFocused}
             bind:value={sendData}
-            height="calc(100% - 24px)"
+            height="100%"
             options={{
               language: "json",
             }}
           />
+          {#if !sendData && !isRequestEditorFocused}
+            <div
+              class="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 pointer-events-none"
+            >
+              <FileJson size="3rem" class="mb-2 text-stone-500" />
+              <p class="text-stone-500">Request Body</p>
+            </div>
+          {/if}
         </div>
 
         <!-- Response Viewer -->
         <div
-          class="flex-1 overflow-hidden rounded-lg flex flex-col @container/response min-h-0"
+          class="border-t border-stone-700 flex-1 overflow-hidden flex flex-col relative @container/response"
         >
-          <h3 class="font-semibold mb-2">Response</h3>
           <StoneMonacoEditor
             bind:this={responseEditor}
             bind:value={receivedData}
-            height="calc(100% - 24px)"
+            height="100%"
             isPulse={statusText === "Sending..."}
             options={{
               readOnly: true,
               language: "json",
             }}
           />
+          {#if !receivedData}
+            <div
+              class="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 pointer-events-none"
+            >
+              <FileOutput size="3rem" class="mb-2 text-stone-500" />
+              <p class="text-stone-500">Response</p>
+            </div>
+          {/if}
           <CopyButton
             value={receivedData}
-            className="absolute top-10 right-2 bg-stone-600 rounded-md w-8 h-8"
+            className="absolute top-2 right-2 bg-stone-600 rounded-md w-8 h-8"
             duration={1000}
           />
         </div>
       </div>
 
       <!-- Status Bar -->
-      <footer class="h-8 bg-stone-800 flex items-center px-4">
+      <footer
+        class="h-8 bg-stone-800 flex items-center px-4 border-t border-stone-700"
+      >
         {statusText}
       </footer>
     </div>
@@ -614,6 +652,10 @@
     onSelect={handleEnvSelect}
     onCancel={closeEnvConfig}
   />
+
+  <div class="fixed bottom-2 right-2 text-xs text-stone-600">
+    Press Cmd+E to open environment settings
+  </div>
 
   <!-- Confirm Dialog -->
   <ConfirmDialog

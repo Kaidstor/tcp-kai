@@ -207,7 +207,7 @@
     onfocus={handleFocus}
     onblur={handleBlur}
     onkeydown={handleKeydown}
-    class="bg-stone-800 p-2 rounded w-full {className} text-transparent caret-white selection:bg-stone-600"
+    class="bg-stone-700 p-2 rounded w-full {className} text-transparent caret-white selection:bg-stone-600"
   />
 
   <!-- Visual overlay for highlighting -->

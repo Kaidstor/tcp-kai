@@ -14,10 +14,10 @@ import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
   // --color-stone-100: oklch(0.97 0.001 106.424);
   // --color-stone-200: oklch(0.923 0.003 48.717);
   // --color-stone-300: oklch(0.869 0.005 56.366);
-  // --color-stone-400: oklch(0.709 0.01 56.259);
+  // --color-stone-400: #A6A09B;
   // --color-stone-500: oklch(0.553 0.013 58.071);
   // --color-stone-600: oklch(0.444 0.011 73.639);
-  // --color-stone-700: oklch(0.374 0.01 67.558);
+  // --color-stone-700: #44403B;
   // --color-stone-800: #292524;
   // --color-stone-900: oklch(0.216 0.006 56.043);
   // --color-stone-950: oklch(0.147 0.004 49.25);
@@ -30,9 +30,9 @@ monaco.editor.defineTheme('stone', {
   colors: {
     'editor.background': '#292524',
     'editor.foreground': '#FAFAF9',
-    'editor.lineHighlightBackground': '#2a2d2e',
-    'editorCursor.foreground': '#292524',
-    'editorLineNumber.foreground': '#292524',
+    'editor.lineHighlightBackground': '#44403B',
+    'editorCursor.foreground': '#fafafa',
+    'editorLineNumber.foreground': '#A6A09B',
   }
 });
 

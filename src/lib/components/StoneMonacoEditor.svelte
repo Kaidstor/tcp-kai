@@ -6,12 +6,14 @@
     value: string;
     height: string;
     isPulse?: boolean;
+    isFocused?: boolean;
     class?: string;
     options?: EditorType.IStandaloneEditorConstructionOptions;
   };
 
   let {
     value = $bindable(""),
+    isFocused = $bindable(false),
     height = "100%",
     class: className = "",
     isPulse = $bindable(false),
@@ -47,12 +49,20 @@
         value = newValue;
       }
     });
+
+    // Focus and blur events
+    editor.onDidFocusEditorText(() => {
+      isFocused = true;
+    });
+
+    editor.onDidBlurEditorText(() => {
+      isFocused = false;
+    });
   });
 
   // Update editor when value changes externally
   export function updateEditorValue() {
     if (editor && value !== editor.getValue()) {
-      console.log("Updating editor value", value);
       editor.setValue(value);
     }
   }
@@ -67,7 +77,7 @@
 
 <div
   bind:this={editorContainer}
-  class="rounded-lg {className}"
+  class={className}
   class:animate-pulse={isPulse}
   style="width: 100%; height: {height}; padding-top: 8px; background-color: #292524;"
 ></div>
