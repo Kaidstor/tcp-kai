@@ -64,7 +64,8 @@
   let requestTime: number | null = $state(null);
 
   let selectedRequest: RequestItem | null = $state(null);
-  let history: { id: number; timestamp: string }[] = $state([]);
+  let history: { id: number; timestamp: string; execution_time?: number }[] =
+    $state([]);
 
   // add collection via Dialog component
   let showAddDialog = $state(false);
@@ -213,13 +214,15 @@
           const historyId = await dbAddHistory(
             selectedRequest.id,
             sendData,
-            receivedData
+            receivedData,
+            requestTime
           );
 
           // Добавляем новую запись в начало списка истории
           history.push({
             id: historyId,
             timestamp: new Date().toLocaleString(),
+            execution_time: requestTime,
           });
         }
       } else {
@@ -306,10 +309,16 @@
       if (item) {
         sendData = item.sent || "";
         receivedData = item.received || "";
+        requestTime = item.execution_time || null;
         requestEditor?.updateEditorValue();
         responseEditor?.updateEditorValue();
+
+        if (item.execution_time) {
+          statusText = `Completed in ${(item.execution_time / 1000).toFixed(2)}s`;
+        } else {
+          statusText = "Done";
+        }
       }
-      statusText = "Done";
     } catch (error) {
       console.error("Ошибка при загрузке истории:", error);
       statusText = "Ошибка загрузки";
@@ -515,7 +524,7 @@
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Request Builder -->
       <div
-        class={`p-4 bg-stone-800 border-b border-stone-700 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-4`}
+        class={`p-2 bg-stone-800 border-b border-stone-700 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2`}
       >
         <div class="flex flex-col gap-1">
           <EnvVarInput
@@ -528,11 +537,11 @@
         <input
           bind:value={cmd}
           placeholder="CMD"
-          class="bg-stone-700 p-2 rounded"
+          class="bg-stone-700 px-2 py-1 rounded"
         />
         <button
           onclick={() => (isSending ? stopQuery() : sendQuery())}
-          class="bg-stone-600 hover:bg-stone-500 px-4 rounded"
+          class="bg-stone-600 hover:bg-stone-500 px-2 py-1 rounded"
         >
           {isSending ? "Stop" : "Send"}
         </button>
@@ -540,7 +549,7 @@
         <DropdownMenu.Root>
           <DropdownMenu.Trigger
             disabled={history.length === 0}
-            class="bg-stone-600 hover:bg-stone-500 p-2 rounded"
+            class="bg-stone-600 hover:bg-stone-500 px-2 py-1 rounded"
           >
             <History size="1.25rem" />
           </DropdownMenu.Trigger>
@@ -558,6 +567,11 @@
                       onclick={() => loadHistoryItem(entry.id)}
                     >
                       {entry.timestamp}
+                      {#if entry.execution_time}
+                        <span class="mx-2 text-xs text-stone-200">
+                          {(entry.execution_time / 1000).toFixed(2)}s
+                        </span>
+                      {/if}
                     </button>
                   </div>
                   <div class="flex items-center space-x-2">

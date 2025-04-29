@@ -59,6 +59,15 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('last_request_id', NULL);
 "#.into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add_execution_time".into(),
+            sql: r#"
+-- Add execution_time column to history table
+ALTER TABLE history ADD COLUMN execution_time REAL;
+"#.into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

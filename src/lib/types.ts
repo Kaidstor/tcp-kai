@@ -19,6 +19,7 @@ export interface HistoryEntry {
   sent?: string;
   received?: string;
   timestamp: string;
+  execution_time?: number; // Time in milliseconds
 }
 
 export interface EnvVar {

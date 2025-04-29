@@ -65,10 +65,10 @@ export async function getHistory(requestId: number): Promise<HistoryEntry[]> {
 }
 
 // Получение списка истории без полных данных запросов и ответов
-export async function getHistoryList(requestId: number): Promise<any[]> {
+export async function getHistoryList(requestId: number): Promise<Pick<HistoryEntry, 'id' | 'timestamp' | 'execution_time'>[]> {
   await ensureDb();
   return await db.select(
-    'SELECT id, timestamp FROM history WHERE request_id = ? ORDER BY timestamp DESC;',
+    'SELECT id, timestamp, execution_time FROM history WHERE request_id = ? ORDER BY timestamp DESC;',
     [requestId]
   );
 }
@@ -83,11 +83,11 @@ export async function getHistoryItem(historyId: number): Promise<HistoryEntry | 
   return items.length > 0 ? items[0] : null;
 }
 
-export async function addHistory(requestId: number, sent: string, received: string): Promise<number> {
+export async function addHistory(requestId: number, sent: string, received: string, executionTime?: number): Promise<number> {
   await ensureDb();
   await db.execute(
-    'INSERT INTO history (request_id, sent, received) VALUES (?, ?, ?);',
-    [requestId, sent, received]
+    'INSERT INTO history (request_id, sent, received, execution_time) VALUES (?, ?, ?, ?);',
+    [requestId, sent, received, executionTime]
   );
   
   // Получаем ID вставленной записи
