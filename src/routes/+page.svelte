@@ -61,6 +61,7 @@
   let receivedData: string = $state("");
   let isSending: boolean = $state(false);
   let statusText: string = $state("Ready");
+  let requestTime: number | null = $state(null);
 
   let selectedRequest: RequestItem | null = $state(null);
   let history: { id: number; timestamp: string }[] = $state([]);
@@ -179,6 +180,8 @@
     lastRequestId = requestId;
     isSending = true;
     statusText = "Sending...";
+    const startTime = performance.now();
+    requestTime = null;
 
     try {
       // Process environment variables in URL and JSON data
@@ -194,13 +197,16 @@
 
       if (!requestFlags[requestId]) return;
 
+      const endTime = performance.now();
+      requestTime = endTime - startTime;
+
       const response = JSON.parse(result);
       if (response.ok) {
         const msg = JSON.parse(response.message);
         receivedData = JSON.stringify(msg, null, 2);
         responseEditor?.updateEditorValue();
 
-        statusText = "Done";
+        statusText = `Done in ${(requestTime / 1000).toFixed(2)}s`;
 
         if (selectedRequest) {
           // Добавляем запись в историю и получаем её ID
@@ -218,12 +224,14 @@
         }
       } else {
         receivedData = "";
-        statusText = response.message || "Error";
+        statusText = `Error in ${(requestTime / 1000).toFixed(2)}s: ${response.message || "Unknown error"}`;
         alert(response.message);
       }
     } catch (error) {
+      const endTime = performance.now();
+      requestTime = endTime - startTime;
       console.error(error);
-      statusText = "Stopped";
+      statusText = `Stopped in ${(requestTime / 1000).toFixed(2)}s`;
     } finally {
       delete requestFlags[requestId];
       isSending = Object.keys(requestFlags).length > 0;
@@ -244,8 +252,19 @@
     if (lastRequestId) {
       invoke("cancel_tcp_request", { requestId: lastRequestId });
     }
+
+    if (isSending) {
+      const endTime = performance.now();
+      const startTimestamp = parseInt(lastRequestId || "0");
+      if (startTimestamp > 0) {
+        requestTime = endTime - startTimestamp;
+        statusText = `Stopped in ${(requestTime / 1000).toFixed(2)}s`;
+      } else {
+        statusText = "Stopped";
+      }
+    }
+
     isSending = false;
-    statusText = "Stopped";
   }
 
   // Dialog for new request
@@ -652,10 +671,6 @@
     onSelect={handleEnvSelect}
     onCancel={closeEnvConfig}
   />
-
-  <div class="fixed bottom-2 right-2 text-xs text-stone-600">
-    Press Cmd+E to open environment settings
-  </div>
 
   <!-- Confirm Dialog -->
   <ConfirmDialog
