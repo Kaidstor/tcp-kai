@@ -14,10 +14,14 @@ export async function getCollections(): Promise<Collection[]> {
   await ensureDb();
   return await db.select('SELECT id, name, pack_id FROM collections;');
 }
-export async function addCollection(name: string): Promise<void> {
+export async function addCollection(name: string): Promise<number> {
   await ensureDb();
   await db.execute('INSERT INTO collections (name) VALUES (?);', [name]);
+
+  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
+  return idResult[0].id;
 }
+
 export async function deleteCollection(id: number): Promise<void> {
   await ensureDb();
   await db.execute('DELETE FROM collections WHERE id = ?;', [id]);
@@ -118,12 +122,16 @@ export async function getEnvPacks(): Promise<EnvPack[]> {
 export async function addEnvPack(
   name: string,
   vars: { key: string; value: string }[] = [],
-): Promise<void> {
+): Promise<number> {
   await ensureDb();
   await db.execute(
     'INSERT INTO env_packs (name, vars) VALUES (?, ?);',
     [name, JSON.stringify(vars)],
   );
+  
+  // Get the last inserted ID
+  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
+  return idResult[0].id;
 }
 
 export async function deleteEnvPack(id: number): Promise<void> {
@@ -134,7 +142,7 @@ export async function deleteEnvPack(id: number): Promise<void> {
 // Fetch a single pack by ID
 export async function getEnvPack(
   packId: number,
-): Promise<{ id: number; name: string; vars: { key: string; value: string }[] } | null> {
+): Promise<EnvPack | null> {
   await ensureDb();
   const rows: { id: number; name: string; vars: string }[] = await db.select(
     'SELECT id, name, vars FROM env_packs WHERE id = ?;',

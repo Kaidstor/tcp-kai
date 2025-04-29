@@ -77,9 +77,11 @@
   }
   async function confirmAdd(name: string) {
     if (!name) return;
-    await dbAddCollection(name);
-    collections = await getCollections();
-    selectedCollection = collections[collections.length - 1]?.id;
+    const colId = await dbAddCollection(name);
+
+    selectedCollection = colId;
+    envPackId = null;
+
     showAddDialog = false;
   }
 
@@ -95,9 +97,9 @@
   }
 
   async function refreshEnvVars(packId: number | null) {
-    let varsArr: EnvVar[] = [];
     if (packId !== null) {
       const pack = await getEnvPack(packId);
+
       envVars = pack?.vars ?? [];
       envLabel = pack?.name ?? "no ENV";
     } else {
@@ -678,6 +680,8 @@
 
         <!-- Resizable handle -->
         <div
+          role="button"
+          tabindex="0"
           class="h-3 relative cursor-ns-resize flex items-center bg-stone-800"
           onmousedown={startDrag}
         >
@@ -745,6 +749,7 @@
   <EnvConfigDialog
     open={showEnvConfig}
     collectionId={selectedCollection}
+    bind:currentPackId={envPackId}
     onSelect={handleEnvSelect}
     onCancel={closeEnvConfig}
   />

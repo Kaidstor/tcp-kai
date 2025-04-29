@@ -1,10 +1,8 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
   import {
-    X,
     Plus,
     Trash2,
-    ChevronDown,
     Check,
     RotateCcw,
     Save,
@@ -16,127 +14,110 @@
     getEnvPacks,
     addEnvPack,
     deleteEnvPack,
-    getEnvPack,
     updateEnvPack,
     updateEnvPackName,
     updateCollectionPack,
   } from "$lib/db";
 
   import type { EnvPack, EnvVar } from "$lib/types";
+  import { onMount } from "svelte";
 
   interface Props {
     open: boolean;
     collectionId: number | null;
+    currentPackId: number | null;
     onSelect: (packId: number | null) => void;
     onCancel: () => void;
   }
 
-  let { open, collectionId, onSelect, onCancel }: Props = $props();
+  let {
+    open,
+    collectionId,
+    currentPackId = $bindable(null),
+    onSelect,
+    onCancel,
+  }: Props = $props();
 
   let packs: EnvPack[] = $state([]);
-  let selectedPack: number | null = $state(null);
+  let selectedPackId: number | null = $derived(currentPackId);
+  let selectedPack: EnvPack | null = $derived(
+    packs.find((p) => p.id === selectedPackId) || null
+  );
   let isEditingPackName = $state(false);
   let editedPackName = $state("");
 
   // Track original and edited variables
-  let originalVars: EnvVar[] = $state([]);
-  let vars: EnvVar[] = $state([]);
+  let originalVars: EnvVar[] = [];
 
   // New variable input
   let newKey = $state("");
   let newValue = $state("");
 
   // Check if there are unsaved changes
-  let hasChanges = $derived(
-    JSON.stringify(vars) !== JSON.stringify(originalVars)
-  );
+  let hasChanges = $derived.by(() => {
+    return JSON.stringify(selectedPack?.vars) !== JSON.stringify(originalVars);
+  });
 
   function handleAddPackConfirm(name: string) {
     if (name) {
-      addEnvPack(name);
-      loadPacks();
+      addEnvPack(name).then((newPackId) => {
+        packs.push({ id: newPackId, name, vars: [] });
+      });
     }
   }
 
   async function loadPacks() {
     const dbPacks = await getEnvPacks();
-    packs = [...dbPacks];
+    packs = dbPacks;
     if (packs.length > 0) {
-      selectedPack = packs[0].id;
+      changeSelectedPackId(packs[0].id);
     } else {
-      selectedPack = null;
+      selectedPackId = null;
     }
-    await loadVars();
-  }
-
-  async function loadVars() {
-    if (selectedPack === null) {
-      originalVars = [];
-      vars = [];
-      return;
-    }
-    const pack = await getEnvPack(selectedPack);
-    originalVars = pack?.vars ?? [];
-    vars = pack?.vars ?? [];
   }
 
   function resetVars() {
-    vars = originalVars;
+    if (selectedPack !== null) {
+      selectedPack.vars = originalVars;
+    }
   }
 
   async function handleDeletePack(id: number) {
     await deleteEnvPack(id);
-    if (selectedPack === id) selectedPack = null;
-    await loadPacks();
+    if (selectedPack?.id === id) selectedPack = null;
+    packs = packs.filter((p) => p.id !== id);
   }
 
   function startEditingPackName() {
     if (selectedPack === null) return;
-    const currentPack = packs.find((p) => p.id === selectedPack);
-    if (currentPack) {
-      editedPackName = currentPack.name;
-      isEditingPackName = true;
-    }
+    editedPackName = selectedPack.name;
+    isEditingPackName = true;
   }
 
   async function savePackName() {
     if (selectedPack === null || !editedPackName.trim()) return;
-    await updateEnvPackName(selectedPack, editedPackName.trim());
+    await updateEnvPackName(selectedPack.id, editedPackName.trim());
     isEditingPackName = false;
-    await loadPacks();
   }
 
   async function handleAddVar() {
     if (!newKey) return;
-    vars = [...vars, { key: newKey, value: newValue }];
+    if (selectedPack !== null) {
+      selectedPack.vars.push({ key: newKey, value: newValue });
+    }
     newKey = "";
     newValue = "";
-
-    // Явно проверяем, есть ли изменения
-    hasChanges = JSON.stringify(vars) !== JSON.stringify(originalVars);
-  }
-
-  function handleUpdateVar(
-    index: number,
-    field: "key" | "value",
-    value: string
-  ) {
-    // Создаем полностью новый массив для корректного отслеживания изменений
-    const updatedVars = [...vars];
-    // Создаем новый объект для измененной переменной
-    updatedVars[index] = { ...updatedVars[index], [field]: value };
-    // Обновляем весь массив
-    vars = updatedVars;
   }
 
   async function handleDeleteVar(idx: number) {
-    vars = vars.filter((_, i) => i !== idx);
+    if (selectedPack === null) return;
+    selectedPack.vars = selectedPack.vars.filter((_, i) => i !== idx);
   }
 
   async function saveChanges() {
     if (selectedPack !== null) {
-      await updateEnvPack(selectedPack, vars);
-      originalVars = [...vars];
+      await updateEnvPack(selectedPack.id, selectedPack.vars);
+      originalVars = [...selectedPack.vars];
     }
   }
 
@@ -149,10 +130,10 @@
         }
 
         // Update the collection's pack reference
-        await updateCollectionPack(collectionId, selectedPack);
+        await updateCollectionPack(collectionId, selectedPack.id);
 
         // Notify parent about selection first
-        onSelect(selectedPack);
+        onSelect(selectedPack.id);
 
         // Don't set dialog state directly, let parent component handle it
         // open = false; // <-- Удаляем эту строку
@@ -163,15 +144,17 @@
   }
 
   function cancel() {
-    // First, reset any editing states
     isEditingPackName = false;
-
-    // Call the cancel handler from parent
     onCancel();
   }
 
-  $effect(() => {
-    if (open) loadPacks();
+  function changeSelectedPackId(id: number) {
+    selectedPackId = id;
+    originalVars = JSON.parse(JSON.stringify(selectedPack!.vars));
+  }
+
+  onMount(() => {
+    loadPacks();
   });
 </script>
 
@@ -181,7 +164,7 @@
     <Dialog.Content
       class="fixed p-0 bg-stone-800 text-white rounded-lg w-[800px] h-[600px] max-w-[95vw] max-h-[90vh] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 shadow-xl overflow-hidden flex flex-col"
     >
-      <div class="bg-stone-700 p-4 border-b border-stone-600">
+      <div class="bg-stone-700 px-4 py-2 border-b border-stone-600">
         <Dialog.Title
           class="text-lg font-semibold flex items-center justify-between h-8"
         >
@@ -203,7 +186,7 @@
                 <span>Save</span>
               </button>
             {/if}
-            {#if selectedPack !== null}
+            {#if selectedPack !== null && selectedPackId !== currentPackId}
               <button
                 onclick={activatePack}
                 class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md transition-colors text-sm inline-flex items-center space-x-1"
@@ -220,30 +203,15 @@
         <!-- Left sidebar: Packs -->
         <div class="w-68 border-r border-stone-700 p-4 flex flex-col h-full">
           <h3 class="text-sm font-medium text-stone-300 mb-2">
-            Environment Packs
+            Паки переменных
           </h3>
-
-          <InputDialog
-            title="Добавить пак переменных"
-            label="Название пака"
-            placeholder="Введите название пака"
-            buttonText="Добавить"
-            onConfirm={handleAddPackConfirm}
-          >
-            <Dialog.Trigger
-              class="flex w-full items-center justify-center space-x-1 p-2 bg-stone-700 hover:bg-stone-600 rounded-md mb-3 transition-colors text-sm"
-            >
-              <Plus size="0.9em" />
-              <span>Добавить пак</span>
-            </Dialog.Trigger>
-          </InputDialog>
 
           <div class="overflow-y-auto flex-1">
             <div class="space-y-1">
               {#each packs as pack}
                 <button
-                  onclick={() => (selectedPack = pack.id)}
-                  class="w-full text-left p-2 rounded-md transition-colors flex justify-between items-center group {selectedPack ===
+                  onclick={() => changeSelectedPackId(pack.id)}
+                  class="w-full text-left p-2 rounded-md transition-colors flex justify-between items-center group {selectedPackId ===
                   pack.id
                     ? 'bg-stone-600'
                     : 'hover:bg-stone-700'}"
@@ -253,6 +221,21 @@
               {/each}
             </div>
           </div>
+
+          <InputDialog
+            title="Добавить пак переменных"
+            label="Название пака"
+            placeholder="Введите название пака"
+            buttonText="Добавить"
+            onConfirm={handleAddPackConfirm}
+          >
+            <Dialog.Trigger
+              class="flex w-full items-center justify-center space-x-1 p-2 bg-stone-700 hover:bg-stone-600 rounded-md transition-colors text-sm"
+            >
+              <Plus size="0.9em" />
+              <span>Добавить пак</span>
+            </Dialog.Trigger>
+          </InputDialog>
         </div>
 
         <!-- Right content: Variables Table -->
@@ -272,8 +255,7 @@
                       onkeydown={(e) => e.key === "Enter" && savePackName()}
                     />
                   {:else}
-                    {packs.find((p) => p.id === selectedPack)?.name ||
-                      "No Pack Selected"}
+                    {selectedPack?.name || "No Pack Selected"}
                   {/if}
                 {:else}
                   No environment packs
@@ -300,7 +282,7 @@
                   <button
                     onclick={(e) => {
                       e.stopPropagation();
-                      handleDeletePack(selectedPack!);
+                      handleDeletePack(selectedPack!.id);
                     }}
                     class="p-1 hover:bg-red-600 rounded-md text-red-400 hover:text-white"
                   >
@@ -331,37 +313,25 @@
                     No environment collections have been created.
                   </p>
                 </div>
-              {:else if selectedPack !== null && vars.length === 0}
+              {:else if selectedPack !== null && selectedPack.vars.length === 0}
                 <div
                   class="flex flex-col items-center justify-center h-full text-center p-4"
                 >
                   <p class="text-gray-500">No variables defined</p>
                 </div>
-              {:else if selectedPack !== null && vars.length > 0}
+              {:else if selectedPack !== null && selectedPack.vars.length > 0}
                 <div class="space-y-1">
-                  {#each vars as v, i}
+                  {#each selectedPack.vars as v, i}
                     <div
                       class="grid grid-cols-[1fr_1fr_auto] gap-2 bg-stone-700 rounded-md p-2 group"
                     >
                       <input
-                        value={v.key}
-                        oninput={(e) =>
-                          handleUpdateVar(
-                            i,
-                            "key",
-                            (e.target as HTMLInputElement).value
-                          )}
+                        bind:value={v.key}
                         class="bg-stone-700 border border-stone-600 focus:border-stone-500 p-1.5 rounded outline-none"
                         placeholder="Key"
                       />
                       <input
-                        value={v.value}
-                        oninput={(e) =>
-                          handleUpdateVar(
-                            i,
-                            "value",
-                            (e.target as HTMLInputElement).value
-                          )}
+                        bind:value={v.value}
                         class="bg-stone-700 border border-stone-600 focus:border-stone-500 p-1.5 rounded outline-none"
                         placeholder="Value"
                       />
