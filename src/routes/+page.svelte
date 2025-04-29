@@ -42,6 +42,9 @@
   let responseEditor: any | null = $state(null);
 
   let isRequestEditorFocused: boolean = $state(false);
+  let isResponseEditorFocused: boolean = $state(false);
+  let requestPanelHeight: string = $state("50%");
+  let isDragging: boolean = $state(false);
 
   let requests: RequestItem[] = $state([]);
   let reqSearch = $state("");
@@ -463,6 +466,51 @@
     requestEditor?.updateEditorValue();
     responseEditor?.updateEditorValue();
   });
+
+  function startDrag(event: MouseEvent) {
+    // Prevent default behavior to avoid text selection
+    event.preventDefault();
+
+    isDragging = true;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isDragging) return;
+
+      // Prevent default to avoid text selection during drag
+      event.preventDefault();
+
+      const container = document.querySelector(".editors-container");
+      if (!container) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const containerHeight = containerRect.height;
+      const relativeY = event.clientY - containerRect.top;
+
+      // Calculate percentage (keep within 20-80% range)
+      let percentage = Math.min(
+        Math.max((relativeY / containerHeight) * 100, 20),
+        80
+      );
+      requestPanelHeight = `${percentage}%`;
+
+      // Update the editors to reflect the new layout
+      requestEditor?.updateEditorValue();
+      responseEditor?.updateEditorValue();
+    };
+
+    const handleMouseUp = () => {
+      isDragging = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }
 </script>
 
 <main class="flex h-screen bg-stone-900 text-white">
@@ -603,9 +651,12 @@
         </button>
       </div>
 
-      <div class="flex flex-col flex-1 overflow-hidden">
+      <div class="flex flex-col flex-1 overflow-hidden editors-container">
         <!-- Body Editor -->
-        <div class="flex-1 overflow-hidden flex flex-col relative">
+        <div
+          class="overflow-hidden flex flex-col relative"
+          style="height: {requestPanelHeight};"
+        >
           <StoneMonacoEditor
             bind:this={requestEditor}
             bind:isFocused={isRequestEditorFocused}
@@ -625,13 +676,25 @@
           {/if}
         </div>
 
+        <!-- Resizable handle -->
+        <div
+          class="h-3 relative cursor-ns-resize flex items-center bg-stone-800"
+          onmousedown={startDrag}
+        >
+          <div
+            class="absolute inset-x-0 h-[1px] bg-stone-700 hover:bg-stone-600"
+          ></div>
+        </div>
+
         <!-- Response Viewer -->
         <div
-          class="border-t border-stone-700 flex-1 overflow-hidden flex flex-col relative @container/response"
+          class="flex-1 overflow-hidden flex flex-col relative @container/response"
+          style="height: calc(100% - {requestPanelHeight} - 4px);"
         >
           <StoneMonacoEditor
             bind:this={responseEditor}
             bind:value={receivedData}
+            bind:isFocused={isResponseEditorFocused}
             height="100%"
             isPulse={statusText === "Sending..."}
             options={{
