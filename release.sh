@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# если есть .env — подгружаем все переменные
-if [ -f ".env" ]; then
-  set -o allexport
-  source .env
-  set +o allexport
-  echo "✅ Loaded .env"
-fi
-
-#
 # Локальное «CI»: κάνем релиз без GitLab CI/CD, всё – у вас на машине.
 # Требования:
 #   - tauri (CLI) в PATH
@@ -17,7 +8,7 @@ fi
 #   - jq, curl
 #   - GITLAB_TOKEN экспортирован в окружении
 #   - проект уже имеет релиз по тегу v<old>, мы создадим новый
-#
+
 
 # --- Настройки проекта: подправьте под себя ---
 NAMESPACE="kaidstor"
@@ -34,54 +25,91 @@ fi
 
 NEW_VER=$1
 TAG="v${NEW_VER}"
+
+echo "> Создаём Git-тег $TAG"
+git tag "$TAG"
+git push origin "$TAG"
+
+echo "> Создаём релиз $TAG"
+RELEASE_CREATION_RESP=$(curl -s --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data "{\"name\":\"Release $TAG\",\"tag_name\":\"$TAG\",\"description\":\"Release $TAG\"}" \
+  "$API/projects/$PROJECT_ID/releases")
+echo "Release API response: $RELEASE_CREATION_RESP"
+
 EXPORTS=()  # массив файлов для аплоада
 
-echo "🎯  Релиз версии ${NEW_VER}"
+# echo "🎯  Релиз версии ${NEW_VER}"
 
-# 1) Bump version в package.json и tauri.conf.json
-echo "> Обновляем версии…"
-npm pkg set version="$NEW_VER"
+# echo "> Обновляем версии…"
+# npm pkg set version="$NEW_VER"
 
-# macOS-совместимое обновление tauri.conf.json
-tmp=$(mktemp)
-jq --arg v "$NEW_VER" '.package.version = $v' src-tauri/tauri.conf.json > "$tmp" \
-  && mv "$tmp" src-tauri/tauri.conf.json
+# # macOS-совместимое обновление tauri.conf.json
+# tmp=$(mktemp)
+# jq --arg v "$NEW_VER" '.version = $v' src-tauri/tauri.conf.json > "$tmp" \
+#   && mv "$tmp" src-tauri/tauri.conf.json
 
-git add package.json src-tauri/tauri.conf.json
-git commit -m "release: ${TAG}"
+# git add package.json src-tauri/tauri.conf.json
+# git commit -m "release: ${TAG}"
 
-# 2) Тэг и пуш
-echo "> Создаём тег и пушим в ${RELEASE_BRANCH}…"
-git tag "$TAG"
-git push origin "$RELEASE_BRANCH" --follow-tags
+# echo "> Создаём тег и пушим в ${RELEASE_BRANCH}…"
+# git tag "$TAG"
+# git push origin "$RELEASE_BRANCH" --follow-tags
 
-# 3) Сборка
-echo "> Устанавливаем deps и собираем…"
-bun install               # или npm install/yarn
-bunx tauri build   # --ci можно опустить
-echo "✔️  Сборка готова"
+# echo "> Устанавливаем deps и собираем…"
+# bun install               # или npm install/yarn
+# bunx tauri build  # --ci можно опустить
+# echo "✔️  Сборка готова"
 
-# 4) Подписание (если нужно явно вызвать)
-bunx tauri signer sign --no-dedupe \
-  --key "$HOME/.tauri/app.pem" \
-  --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-  --release-dir src-tauri/target/release/bundle
+# # директория с bundle-артефактами
+# BUNDLE_DIR=src-tauri/target/release/bundle
 
-# 5) Генерация latest.json
-echo "> Генерируем latest.json…"
-bunx tauri updater json \
-  --target src-tauri/target/release/bundle \
-  --output dist/latest.json \
-  --version "$NEW_VER"
+# echo "> Генерируем latest.json..."
+# # найдём первый tar.gz архив для подписи
+# TAR_ARCHIVE=$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" | head -n1)
+# SIG_FILE="$TAR_ARCHIVE.sig"
+# # читаем подпись, удаляя переводы строк
+# SIG=$(tr -d '\n' < "$SIG_FILE")
+# # формируем URL загрузки артефакта
+# URL="https://gitlab.com/$NAMESPACE/$PROJECT/-/releases/permalink/$TAG/downloads/$(basename "$TAR_ARCHIVE")"
+# # создаём манифест
+# cat > "$BUNDLE_DIR/latest.json" <<EOF
+# {
+#   "version": "$NEW_VER",
+#   "notes": "",
+#   "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+#   "platforms": {
+#     "darwin-aarch64": {
+#       "url": "$URL",
+#       "signature": "$SIG"
+#     }
+#   }
+# }
+# EOF
 
-# 6) Собираем список файлов для аплоада
-mapfile -t BUNDLE_FILES < <(find src-tauri/target/release/bundle -type f \
-  \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' \) )
+# добавим в список для upload’а все нужные файлы:
+BUNDLE_DIR=src-tauri/target/release/bundle
+echo "> Собираем список артефактов текущей версии…"
 
-# добавим и latest.json
-BUNDLE_FILES+=(dist/latest.json)
+BUNDLE_FILES=()
+# Ищем все пригодные файлы, но берём только те,
+# что содержат номер текущей версии $NEW_VER или latest.json
+while IFS= read -r -d '' file; do
+  name="$(basename "$file")"
+  if [[ "$name" == *"$NEW_VER"* ]] || [[ "$name" == "latest.json" ]]; then
+    BUNDLE_FILES+=("$file")
+  fi
+done < <(find "$BUNDLE_DIR" -type f \( \
+        -name "*.dmg"        -o -name "*.tar.gz"       -o -name "*.tar.gz.sig" \
+        -o -name "*.AppImage" -o -name "*.AppImage.sig" \
+        -o -name "*.deb"     -o -name "*.deb.sig" \
+        -o -name "*.msi"     -o -name "*.msi.sig" \
+        -o -name "*.zip"     -o -name "*.zip.sig" \
+        -o -name "latest.json" \) -print0)
 
-echo "> Файлов для загрузки: ${#BUNDLE_FILES[@]}"
+echo "Найдено ${#BUNDLE_FILES[@]} файлов:"
+printf '  %s\n' "${BUNDLE_FILES[@]}"
 
 # 7) Заливаем каждый файл через Uploads API
 for file in "${BUNDLE_FILES[@]}"; do
@@ -89,17 +117,19 @@ for file in "${BUNDLE_FILES[@]}"; do
   RESP=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --form "file=@$file" \
     "$API/projects/$PROJECT_ID/uploads")
+  echo "Upload API response for $file: $RESP"
   URL=$(echo "$RESP" | jq -r .url)
   NAME=$(basename "$file")
   FULL_URL="https://gitlab.com/$NAMESPACE/$PROJECT/uploads/${URL#*/}"
 
   # 8) Привязываем к релизу asset-link
   echo "  → Link to release ${TAG}: $NAME"
-  curl -s --request POST \
+  LINK_RESP=$(curl -s --request POST \
     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --header "Content-Type: application/json" \
-    --data  "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\"}" \
-    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links" >/dev/null
+    --data  "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\",\"direct_asset_path\":\"/$NAME\"}" \
+    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links")
+  echo "Link API response for $NAME: $LINK_RESP"
 
   echo "    ✓ $NAME"
 done

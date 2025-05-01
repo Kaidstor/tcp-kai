@@ -1,7 +1,0 @@
-image: "$CI_REGISTRY_IMAGE/tauri-bun:latest"  # rust+node+tauri
-
-build:
-  stage: build
-  script:
-    - bun install
-    - bunx tauri build --ci
