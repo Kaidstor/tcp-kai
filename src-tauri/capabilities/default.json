@@ -10,6 +10,9 @@
     "notification:default",
     "sql:default",
     "sql:allow-execute",
-    "clipboard-manager:allow-write-text"
+    "clipboard-manager:allow-write-text",
+    "updater:default",
+    "process:default",
+    "process:allow-restart"
   ]
 }

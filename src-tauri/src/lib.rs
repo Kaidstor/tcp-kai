@@ -1,5 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
+use tauri_plugin_process;
+use tauri_plugin_updater;
 
 mod commands;
 use std::sync::{Arc, Mutex};
@@ -37,7 +39,8 @@ CREATE TABLE IF NOT EXISTS history (
   received TEXT,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-"#.into(),
+"#
+            .into(),
             kind: MigrationKind::Up,
         },
         Migration {
@@ -56,7 +59,8 @@ CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
 -- Начальные настройки
 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_collection_id', NULL);
 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_request_id', NULL);
-"#.into(),
+"#
+            .into(),
             kind: MigrationKind::Up,
         },
         Migration {
@@ -65,19 +69,37 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('last_request_id', NULL);
             sql: r#"
 -- Add execution_time column to history table
 ALTER TABLE history ADD COLUMN execution_time REAL;
-"#.into(),
+"#
+            .into(),
             kind: MigrationKind::Up,
         },
     ];
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            {
+                app
+                    .handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
+            Ok(())
+        })
         // Initialize SQL plugin with migrations
-        .plugin(SqlBuilder::default().add_migrations("sqlite:app.db", migrations).build())
+        .plugin(
+            SqlBuilder::default()
+                .add_migrations("sqlite:app.db", migrations)
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::new(Mutex::new(commands::RequestState::new())))
-        .invoke_handler(tauri::generate_handler![commands::send_tcp_request, commands::cancel_tcp_request])
+        .invoke_handler(tauri::generate_handler![
+            commands::send_tcp_request,
+            commands::cancel_tcp_request
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

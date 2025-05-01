@@ -1,0 +1,7 @@
+image: registry.gitlab.com/kaidstor/tcp_client_tauri/tauri-bun:latest   # rust+node+tauri
+
+build:
+  stage: build
+  script:
+    - bun install
+    - bunx tauri build --ci

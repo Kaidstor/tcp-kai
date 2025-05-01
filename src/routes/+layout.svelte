@@ -1,12 +1,12 @@
 <script lang="ts">
   import "../app.css";
-  import { appLocalDataDir } from "@tauri-apps/api/path";
 
-  (async () => {
-    const appLocalDataDirPath = await appLocalDataDir();
+  import { onMount } from "svelte";
+  import { initUpdater } from "$lib/updater";
 
-    console.log(appLocalDataDirPath);
-  })();
+  onMount(() => {
+    initUpdater();
+  });
 </script>
 
 <slot />

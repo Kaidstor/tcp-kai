@@ -4,11 +4,11 @@ use serde_json::error::Error as SerdeError;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tauri::State;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
-use tauri::State;
 
 // Holds active request cancellation senders
 pub struct RequestState {
@@ -70,7 +70,10 @@ async fn establish_connection(connection: String) -> ConnectionResult {
             ConnectionResult::Error(ApiResponse::error(format!("TCP connection error: {}", e)))
         }
         Err(_) => {
-            let err_msg = format!("Connection to {} timed out after {:?}", connection, timeout_duration);
+            let err_msg = format!(
+                "Connection to {} timed out after {:?}",
+                connection, timeout_duration
+            );
             println!("{}", err_msg);
             ConnectionResult::Error(ApiResponse::error(err_msg))
         }
@@ -108,7 +111,11 @@ pub async fn send_tcp_request(
         let command = format!(
             "#{{\"pattern\":\"{}\",\"data\":{},\"id\":\"unique_id_12345\"}}",
             pattern,
-            if !json.is_empty() { json.clone() } else { "null".to_string() }
+            if !json.is_empty() {
+                json.clone()
+            } else {
+                "null".to_string()
+            }
         );
         println!("Raw TCP command payload: {}", command);
 
@@ -122,7 +129,10 @@ pub async fn send_tcp_request(
                 e
             )))
             .unwrap_or_else(|err: SerdeError| {
-                format!(r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#, err)
+                format!(
+                    r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#,
+                    err
+                )
             }));
         }
         if let Err(e) = stream.flush().await {
@@ -131,7 +141,10 @@ pub async fn send_tcp_request(
                 e
             )))
             .unwrap_or_else(|err: SerdeError| {
-                format!(r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#, err)
+                format!(
+                    r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#,
+                    err
+                )
             }));
         }
 
@@ -155,10 +168,7 @@ pub async fn send_tcp_request(
 
 // Cancel an in-flight TCP request by its ID
 #[tauri::command]
-pub fn cancel_tcp_request(
-    request_id: String,
-    state: State<'_, Arc<Mutex<RequestState>>>,
-) {
+pub fn cancel_tcp_request(request_id: String, state: State<'_, Arc<Mutex<RequestState>>>) {
     let mut state_guard = state.lock().unwrap();
     if let Some(tx) = state_guard.active_requests.remove(&request_id) {
         let _ = tx.send(());
@@ -167,9 +177,14 @@ pub fn cancel_tcp_request(
 
 // Wrap a raw message into ApiResponse JSON
 fn to_api_response(message: String) -> Result<String, String> {
-    Ok(serde_json::to_string(&ApiResponse::new(message)).unwrap_or_else(|err| {
-        format!(r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#, err)
-    }))
+    Ok(
+        serde_json::to_string(&ApiResponse::new(message)).unwrap_or_else(|err| {
+            format!(
+                r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#,
+                err
+            )
+        }),
+    )
 }
 
 // Read length prefix until '#' marker
@@ -177,8 +192,13 @@ async fn read_message_length(stream: &mut TcpStream) -> Result<usize, String> {
     let mut len_str = String::new();
     let mut buf = [0; 1];
     loop {
-        stream.read_exact(&mut buf).await.map_err(|e| e.to_string())?;
-        if buf[0] == b'#' { break; }
+        stream
+            .read_exact(&mut buf)
+            .await
+            .map_err(|e| e.to_string())?;
+        if buf[0] == b'#' {
+            break;
+        }
         len_str.push(buf[0] as char);
     }
     len_str.parse::<usize>().map_err(|e| e.to_string())
@@ -191,9 +211,14 @@ async fn read_full_response(mut stream: TcpStream) -> Result<String, String> {
     let marker = b"unique_id_12345\"}";
     loop {
         let mut byte = [0; 1];
-        stream.read_exact(&mut byte).await.map_err(|e| e.to_string())?;
+        stream
+            .read_exact(&mut byte)
+            .await
+            .map_err(|e| e.to_string())?;
         buffer.push(byte[0]);
-        if buffer.ends_with(marker) { break; }
+        if buffer.ends_with(marker) {
+            break;
+        }
     }
     String::from_utf8(buffer).map_err(|e| format!("Error converting bytes to string: {}", e))
-} 
+}
