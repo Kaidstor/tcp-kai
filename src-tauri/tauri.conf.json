@@ -37,7 +37,9 @@
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:app.db"]
+      "preload": [
+        "sqlite:app.db"
+      ]
     },
     "updater": {
       "active": true,
@@ -47,5 +49,8 @@
       ],
       "dialog": false
     }
+  },
+  "package": {
+    "version": "0.1.1"
   }
 }
