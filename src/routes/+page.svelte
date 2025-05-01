@@ -34,6 +34,7 @@
   import CommandMenu from "$lib/components/CommandMenu.svelte";
   import type { Collection, RequestItem, EnvVar } from "$lib/types";
   import { processEnvVars } from "$lib/utils";
+  import { onMount } from "svelte";
 
   let collections: Collection[] = $state([]);
   let selectedCollection: number | null = $state(null);
@@ -444,7 +445,7 @@
     }
   }
 
-  $effect(() => {
+  onMount(() => {
     restoreAppState();
 
     // Add keyboard shortcut listener
