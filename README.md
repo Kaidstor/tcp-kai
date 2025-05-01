@@ -1,7 +1,17 @@
-# Tauri + SvelteKit + TypeScript
+# CI/CD
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+## 1. Залогиньтесь (лучше через stdin, чтобы пароль не попал в history)
 
-## Recommended IDE Setup
+echo 'glpat-XXXXXXXXXXXX' | docker login registry.gitlab.com -u kaidstor --password-stdin
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+## 2. Задайте имя образа вручную
+
+IMAGE=registry.gitlab.com/kaidstor/tcp_client_tauri/tauri-bun:latest
+
+## 3. Соберите и пометьте образ этим тегом
+
+docker build -t "$IMAGE" .
+
+## 4. Запушьте
+
+docker push "$IMAGE"

@@ -1,4 +1,4 @@
-image: registry.gitlab.com/kaidstor/tcp_client_tauri/tauri-bun:latest   # rust+node+tauri
+image: "$CI_REGISTRY_IMAGE/tauri-bun:latest"  # rust+node+tauri
 
 build:
   stage: build
