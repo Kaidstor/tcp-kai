@@ -1,12 +1,12 @@
 {
   "name": "tcp-client",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "echo 'ok'",
-    "build1": "vite build",
+    "build1": "echo 'ok'",
+    "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
