@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
+
+# Включить отладочный вывод: DEBUG=1 ./release.sh …
+DEBUG=${DEBUG:-0}
+if [[ "$DEBUG" == "1" ]]; then
+  set -x
+fi
 
 # Локальное «CI»: κάνем релиз без GitLab CI/CD, всё – у вас на машине.
 # Требования:
@@ -53,10 +60,15 @@ RELEASE_CREATION_RESP=$(curl -s --request POST \
   "$API/projects/$PROJECT_ID/releases")
 echo "Release API response: $RELEASE_CREATION_RESP"
 
-# echo "> Устанавливаем deps и собираем…"
-bun install               # или npm install/yarn
-bunx tauri build  # --ci можно опустить
-# echo "✔️  Сборка готова"
+
+if [[ -z "${SKIP_BUILD:-}" ]]; then
+  echo "> Устанавливаем deps и собираем…"
+  bun install               # или npm install/yarn
+  bunx tauri build  # --ci можно опустить
+  echo "✔️  Сборка готова"
+else
+  echo "> SKIP_BUILD задан — пропускаем стадию сборки."
+fi
 
 # директория с bundle-артефактами
 BUNDLE_DIR=src-tauri/target/release/bundle
@@ -130,6 +142,14 @@ for file in "${BUNDLE_FILES[@]}"; do
   echo "Link API response for $NAME: $LINK_RESP"
 
   echo "    ✓ $NAME"
+  if [[ "$DEBUG" == "1" ]]; then
+    echo "    ↪ Проверяем доступность:"
+    echo "      HEAD $FULL_URL"
+    curl -I -s "$FULL_URL" | head -n 1
+    LINK_DL="https://gitlab.com/$NAMESPACE/$PROJECT/-/releases/${TAG}/downloads/$NAME"
+    echo "      HEAD $LINK_DL"
+    curl -I -s "$LINK_DL" | head -n 1
+  fi
 done
 
 echo "✅ Релиз $TAG загружен и assets привязаны."
