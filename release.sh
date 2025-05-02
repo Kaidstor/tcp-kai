@@ -17,14 +17,6 @@ fi
 #   - проект уже имеет релиз по тегу v<old>, мы создадим новый
 
 
-# --- Настройки проекта: подправьте под себя ---
-NAMESPACE="kaidstor"
-PROJECT="tcp_client_tauri"
-PROJECT_ID=56949495                # ваш GitLab Project ID
-API="https://gitlab.com/api/v4"
-RELEASE_BRANCH="main"              # куда пушим теги
-# -------------------------------------------
-
 # Determine version: use argument if provided, else bump patch version from package.json
 if [ $# -eq 0 ] || [ -z "$1" ]; then
   CUR_VER=$(jq -r .version package.json)
@@ -59,7 +51,7 @@ curl -s --request POST \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\":\"Release $TAG\",\"tag_name\":\"$TAG\",\"description\":\"Release $TAG\"}" \
-  "$API/projects/$PROJECT_ID/releases"
+  "$API/projects/$PROJECT_ID/releases" > /dev/null
 
 
 if [[ -z "${SKIP_BUILD:-}" ]]; then
@@ -127,7 +119,7 @@ for file in "${BUNDLE_FILES[@]}"; do
   RESP=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --form "file=@$file" \
     "$API/projects/$PROJECT_ID/uploads")
-    
+
   # GitLab ≥17.1 возвращает .full_path, а более старые версии – .url
   URL=$(echo "$RESP" | jq -r '.full_path // .url')
   # Формируем абсолютный URL, который корректен для всех версий GitLab
@@ -140,7 +132,7 @@ for file in "${BUNDLE_FILES[@]}"; do
     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --header "Content-Type: application/json" \
     --data "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\",\"direct_asset_path\":\"/$NAME\"}" \
-    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links"
+    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links" > /dev/null
 
   echo "    ✓ $NAME"
   if [[ "$DEBUG" == "1" ]]; then
