@@ -16,14 +16,9 @@
     deleteCollection as dbDeleteCollection,
   } from "$lib/db";
   import { invoke } from "@tauri-apps/api/core";
-  import {
-    Trash2,
-    History,
-    FileJson,
-    FileOutput,
-    Settings,
-  } from "lucide-svelte";
+  import { Trash2, History, FileJson, FileOutput } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
+  import ScrollArea from "$lib/components/ScrollArea.svelte";
   import StoneMonacoEditor from "$lib/components/StoneMonacoEditor.svelte";
   import AddRequestDialog from "$lib/components/AddRequestDialog.svelte";
   import AddCollectionDialog from "$lib/components/AddCollectionDialog.svelte";
@@ -35,6 +30,7 @@
   import type { Collection, RequestItem, EnvVar } from "$lib/types";
   import { processEnvVars } from "$lib/utils";
   import { onMount } from "svelte";
+  import UpdaterButton from "$lib/components/UpdaterButton.svelte";
 
   let collections: Collection[] = $state([]);
   let selectedCollection: number | null = $state(null);
@@ -82,6 +78,12 @@
 
     selectedCollection = colId;
     envPackId = null;
+
+    collections.push({
+      id: colId,
+      name: name,
+      pack_id: null,
+    });
 
     showAddDialog = false;
   }
@@ -519,55 +521,63 @@
 <main class="flex h-screen bg-stone-900 text-white">
   <!-- Sidebar -->
   <aside
-    class="w-64 bg-stone-800 border-r border-stone-700 p-4 overflow-y-auto"
+    class="w-64 bg-stone-800 border-r border-stone-700 flex flex-col h-full relative"
   >
-    <CommandMenu
-      {collections}
-      {selectedCollection}
-      onSelectCollection={selectCollection}
-      onAddCollection={openAdd}
-      onOpenEnvConfig={openEnvConfig}
-      onDeleteCollection={handleDeleteCollection}
-    />
+    <div class="p-2">
+      <CommandMenu
+        {collections}
+        {selectedCollection}
+        onSelectCollection={selectCollection}
+        onAddCollection={openAdd}
+        onOpenEnvConfig={openEnvConfig}
+        onDeleteCollection={handleDeleteCollection}
+      />
 
-    <h2
-      class="text-xl font-semibold mt-6 mb-4 flex items-center justify-between"
-    >
-      <span>Requests</span>
-      <button
-        onclick={openAddRequest}
-        class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded"
-        >+ New</button
+      <h2
+        class="text-xl font-semibold mt-6 mb-4 flex items-center justify-between"
       >
-    </h2>
-    {#if requests.length >= 5}
+        <span>Requests</span>
+        <button
+          onclick={openAddRequest}
+          class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded"
+          >+ New</button
+        >
+      </h2>
+    </div>
+
+    <div class="px-2">
       <input
         placeholder="Search requests..."
         bind:value={reqSearch}
-        class="w-full mb-2 py-1 px-2 bg-stone-700 rounded h-10"
+        class="w-full py-1 px-2 bg-stone-700 rounded h-10"
       />
-    {/if}
-    {#each filteredRequests as req}
-      <div
-        class="group relative w-full flex items-center hover:bg-stone-600 rounded"
-        class:bg-stone-700={req === selectedRequest}
-      >
-        <button
-          class="w-full text-left cursor-pointer p-2 pr-8 flex-grow truncate"
-          onclick={() => selectRequest(req)}
-          title={req.name}
+    </div>
+    <ScrollArea class="flex-1 overflow-y-auto pb-2">
+      {#each filteredRequests as req}
+        <div
+          class="group relative w-full flex items-center hover:bg-stone-600 rounded"
+          class:bg-stone-700={req === selectedRequest}
         >
-          {req.name}
-        </button>
-        <button
-          class="p-1 hover:text-red-500 absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-          onclick={(e) => handleDeleteRequest(e, req.id)}
-          title="Удалить запрос"
-        >
-          <Trash2 size="0.9rem" />
-        </button>
-      </div>
-    {/each}
+          <button
+            class="w-full text-left cursor-pointer p-2 pr-8 flex-grow truncate"
+            onclick={() => selectRequest(req)}
+            title={req.name}
+          >
+            {req.name}
+          </button>
+          <button
+            class="p-1 hover:text-red-500 absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            onclick={(e) => handleDeleteRequest(e, req.id)}
+            title="Удалить запрос"
+          >
+            <Trash2 size="0.9rem" />
+          </button>
+        </div>
+      {/each}
+    </ScrollArea>
+
+    <!-- Add UpdaterButton at the bottom of the sidebar -->
+    <UpdaterButton />
   </aside>
 
   {#if selectedRequest}

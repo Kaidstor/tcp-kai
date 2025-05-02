@@ -37,9 +37,7 @@
   },
   "plugins": {
     "sql": {
-      "preload": [
-        "sqlite:app.db"
-      ]
+      "preload": ["sqlite:app.db"]
     },
     "updater": {
       "active": true,

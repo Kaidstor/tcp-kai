@@ -3,9 +3,16 @@
 
   import { onMount } from "svelte";
   import { initUpdater } from "$lib/updater";
+  import { app } from "@tauri-apps/api";
+
+  console.log("app.getVersion()", app.getVersion());
 
   onMount(() => {
-    initUpdater();
+    const cleanup = initUpdater();
+
+    return () => {
+      cleanup();
+    };
   });
 </script>
 

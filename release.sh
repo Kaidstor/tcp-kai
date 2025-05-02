@@ -25,12 +25,14 @@ API="https://gitlab.com/api/v4"
 RELEASE_BRANCH="main"              # куда пушим теги
 # -------------------------------------------
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $0 <new-version>  (например: 0.1.1)"
-  exit 1
+# Determine version: use argument if provided, else bump patch version from package.json
+if [ $# -eq 0 ] || [ -z "$1" ]; then
+  CUR_VER=$(jq -r .version package.json)
+  NEW_VER=$(echo "$CUR_VER" | awk -F. -v OFS=. '{$NF++; print}')
+else
+  NEW_VER=$1
 fi
 
-NEW_VER=$1
 TAG="v${NEW_VER}"
 
 EXPORTS=()  # массив файлов для аплоада
@@ -53,12 +55,11 @@ git tag "$TAG"
 git push origin "$TAG"
 
 echo "> Создаём релиз $TAG"
-RELEASE_CREATION_RESP=$(curl -s --request POST \
+curl -s --request POST \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\":\"Release $TAG\",\"tag_name\":\"$TAG\",\"description\":\"Release $TAG\"}" \
-  "$API/projects/$PROJECT_ID/releases")
-echo "Release API response: $RELEASE_CREATION_RESP"
+  "$API/projects/$PROJECT_ID/releases"
 
 
 if [[ -z "${SKIP_BUILD:-}" ]]; then
@@ -80,7 +81,8 @@ SIG_FILE="$TAR_ARCHIVE.sig"
 # читаем подпись, удаляя переводы строк
 SIG=$(tr -d '\n' < "$SIG_FILE")
 # формируем URL загрузки артефакта
-URL="https://gitlab.com/$NAMESPACE/$PROJECT/-/releases/permalink/$TAG/downloads/$(basename "$TAR_ARCHIVE")"
+
+URL="https://gitlab.com/$NAMESPACE/$PROJECT/-/releases/$TAG/downloads/$(basename "$TAR_ARCHIVE")"
 # создаём манифест
 cat > "$BUNDLE_DIR/latest.json" <<EOF
 {
@@ -105,7 +107,7 @@ BUNDLE_FILES=()
 # что содержат номер текущей версии $NEW_VER или latest.json
 while IFS= read -r -d '' file; do
   name="$(basename "$file")"
-  if [[ "$name" == *"$NEW_VER"* ]] || [[ "$name" == "latest.json" ]]; then
+  if [[ "$name" == *"$NEW_VER"* ]] || [[ "$name" == "latest.json" ]] || [[ "$name" == *.app.tar.gz ]] || [[ "$name" == *.app.tar.gz.sig ]]; then
     BUNDLE_FILES+=("$file")
   fi
 done < <(find "$BUNDLE_DIR" -type f \( \
@@ -125,7 +127,7 @@ for file in "${BUNDLE_FILES[@]}"; do
   RESP=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --form "file=@$file" \
     "$API/projects/$PROJECT_ID/uploads")
-  echo "Upload API response for $file: $RESP"
+    
   # GitLab ≥17.1 возвращает .full_path, а более старые версии – .url
   URL=$(echo "$RESP" | jq -r '.full_path // .url')
   # Формируем абсолютный URL, который корректен для всех версий GitLab
@@ -134,12 +136,11 @@ for file in "${BUNDLE_FILES[@]}"; do
 
   # 8) Привязываем к релизу asset-link
   echo "  → Link to release ${TAG}: $NAME"
-  LINK_RESP=$(curl -s --request POST \
+  curl -s --request POST \
     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --header "Content-Type: application/json" \
     --data "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\",\"direct_asset_path\":\"/$NAME\"}" \
-    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links")
-  echo "Link API response for $NAME: $LINK_RESP"
+    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links"
 
   echo "    ✓ $NAME"
   if [[ "$DEBUG" == "1" ]]; then

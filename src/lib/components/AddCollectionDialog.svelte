@@ -2,11 +2,15 @@
   import { Dialog, Separator } from "bits-ui";
   import { X } from "lucide-svelte";
 
-  export let open: boolean;
-  export let onConfirm: (name: string) => void;
-  export let onCancel: () => void;
+  interface Props {
+    open: boolean;
+    onConfirm: (name: string) => void;
+    onCancel: () => void;
+  }
 
-  let name = "";
+  let { open = $bindable(false), onConfirm, onCancel }: Props = $props();
+
+  let name = $state("");
 
   function handleConfirm() {
     onConfirm(name);
