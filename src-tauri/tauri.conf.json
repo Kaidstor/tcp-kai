@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "tcp-client",
-  "version": "v0.1.19",
+  "version": "0.1.19",
   "identifier": "com.kaidstor.app",
   "build": {
     "beforeDevCommand": "bun run dev",
