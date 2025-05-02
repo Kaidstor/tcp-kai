@@ -26,6 +26,21 @@ fi
 NEW_VER=$1
 TAG="v${NEW_VER}"
 
+EXPORTS=()  # массив файлов для аплоада
+
+echo "🎯  Релиз версии ${NEW_VER}"
+
+echo "> Обновляем версии…"
+npm pkg set version="$NEW_VER"
+
+# macOS-совместимое обновление tauri.conf.json
+tmp=$(mktemp)
+jq --arg v "$NEW_VER" '.version = $v' src-tauri/tauri.conf.json > "$tmp" \
+  && mv "$tmp" src-tauri/tauri.conf.json
+
+git add package.json src-tauri/tauri.conf.json
+git commit -m "release: ${TAG}"
+
 echo "> Создаём Git-тег $TAG"
 git tag "$TAG"
 git push origin "$TAG"
@@ -38,55 +53,36 @@ RELEASE_CREATION_RESP=$(curl -s --request POST \
   "$API/projects/$PROJECT_ID/releases")
 echo "Release API response: $RELEASE_CREATION_RESP"
 
-EXPORTS=()  # массив файлов для аплоада
-
-# echo "🎯  Релиз версии ${NEW_VER}"
-
-# echo "> Обновляем версии…"
-# npm pkg set version="$NEW_VER"
-
-# # macOS-совместимое обновление tauri.conf.json
-# tmp=$(mktemp)
-# jq --arg v "$NEW_VER" '.version = $v' src-tauri/tauri.conf.json > "$tmp" \
-#   && mv "$tmp" src-tauri/tauri.conf.json
-
-# git add package.json src-tauri/tauri.conf.json
-# git commit -m "release: ${TAG}"
-
-# echo "> Создаём тег и пушим в ${RELEASE_BRANCH}…"
-# git tag "$TAG"
-# git push origin "$RELEASE_BRANCH" --follow-tags
-
 # echo "> Устанавливаем deps и собираем…"
-# bun install               # или npm install/yarn
-# bunx tauri build  # --ci можно опустить
+bun install               # или npm install/yarn
+bunx tauri build  # --ci можно опустить
 # echo "✔️  Сборка готова"
 
-# # директория с bundle-артефактами
-# BUNDLE_DIR=src-tauri/target/release/bundle
+# директория с bundle-артефактами
+BUNDLE_DIR=src-tauri/target/release/bundle
 
-# echo "> Генерируем latest.json..."
-# # найдём первый tar.gz архив для подписи
-# TAR_ARCHIVE=$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" | head -n1)
-# SIG_FILE="$TAR_ARCHIVE.sig"
-# # читаем подпись, удаляя переводы строк
-# SIG=$(tr -d '\n' < "$SIG_FILE")
-# # формируем URL загрузки артефакта
-# URL="https://gitlab.com/$NAMESPACE/$PROJECT/-/releases/permalink/$TAG/downloads/$(basename "$TAR_ARCHIVE")"
-# # создаём манифест
-# cat > "$BUNDLE_DIR/latest.json" <<EOF
-# {
-#   "version": "$NEW_VER",
-#   "notes": "",
-#   "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-#   "platforms": {
-#     "darwin-aarch64": {
-#       "url": "$URL",
-#       "signature": "$SIG"
-#     }
-#   }
-# }
-# EOF
+echo "> Генерируем latest.json..."
+# найдём первый tar.gz архив для подписи
+TAR_ARCHIVE=$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" | head -n1)
+SIG_FILE="$TAR_ARCHIVE.sig"
+# читаем подпись, удаляя переводы строк
+SIG=$(tr -d '\n' < "$SIG_FILE")
+# формируем URL загрузки артефакта
+URL="https://gitlab.com/$NAMESPACE/$PROJECT/-/releases/permalink/$TAG/downloads/$(basename "$TAR_ARCHIVE")"
+# создаём манифест
+cat > "$BUNDLE_DIR/latest.json" <<EOF
+{
+  "version": "$NEW_VER",
+  "notes": "",
+  "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "platforms": {
+    "darwin-aarch64": {
+      "url": "$URL",
+      "signature": "$SIG"
+    }
+  }
+}
+EOF
 
 # добавим в список для upload’а все нужные файлы:
 BUNDLE_DIR=src-tauri/target/release/bundle
@@ -118,16 +114,18 @@ for file in "${BUNDLE_FILES[@]}"; do
     --form "file=@$file" \
     "$API/projects/$PROJECT_ID/uploads")
   echo "Upload API response for $file: $RESP"
-  URL=$(echo "$RESP" | jq -r .url)
+  # GitLab ≥17.1 возвращает .full_path, а более старые версии – .url
+  URL=$(echo "$RESP" | jq -r '.full_path // .url')
+  # Формируем абсолютный URL, который корректен для всех версий GitLab
+  FULL_URL="https://gitlab.com${URL}"
   NAME=$(basename "$file")
-  FULL_URL="https://gitlab.com/$NAMESPACE/$PROJECT/uploads/${URL#*/}"
 
   # 8) Привязываем к релизу asset-link
   echo "  → Link to release ${TAG}: $NAME"
   LINK_RESP=$(curl -s --request POST \
     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --header "Content-Type: application/json" \
-    --data  "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\",\"direct_asset_path\":\"/$NAME\"}" \
+    --data "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\",\"direct_asset_path\":\"/$NAME\"}" \
     "$API/projects/$PROJECT_ID/releases/$TAG/assets/links")
   echo "Link API response for $NAME: $LINK_RESP"
 
