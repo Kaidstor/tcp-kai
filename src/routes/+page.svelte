@@ -1,7 +1,5 @@
 <script lang="ts">
   import {
-    getCollections,
-    getRequests,
     addCollection as dbAddCollection,
     addRequest as dbAddRequest,
     updateRequest,
@@ -9,8 +7,6 @@
     deleteHistory,
     getHistoryItem,
     updateSetting,
-    getSetting,
-    getEnvPack,
     deleteRequest,
     addHistory as dbAddHistory,
     deleteCollection as dbDeleteCollection,
@@ -27,13 +23,13 @@
   import CopyButton from "$lib/components/CopyButton.svelte";
   import EnvVarInput from "$lib/components/EnvVarInput.svelte";
   import CommandMenu from "$lib/components/CommandMenu.svelte";
-  import type { Collection, RequestItem, EnvVar } from "$lib/types";
+  import type { RequestItem, EnvVar } from "$lib/types";
   import { processEnvVars } from "$lib/utils";
   import { onMount } from "svelte";
   import UpdaterButton from "$lib/components/UpdaterButton.svelte";
-
-  let collections: Collection[] = $state([]);
-  let selectedCollection: number | null = $state(null);
+  import { appStore } from "$lib/store/app-store.svelte";
+  import { envStore } from "$lib/store/env-store.svelte";
+  import { requestStore } from "$lib/store/request-store.svelte";
 
   let requestEditor: any | null = $state(null);
   let responseEditor: any | null = $state(null);
@@ -43,27 +39,26 @@
   let requestPanelHeight: string = $state("50%");
   let isDragging: boolean = $state(false);
 
-  let requests: RequestItem[] = $state([]);
   let reqSearch = $state("");
 
   let filteredRequests = $derived(
     reqSearch
-      ? requests.filter((r) =>
+      ? requestStore.requests.filter((r) =>
           r.name.toLowerCase().includes(reqSearch.toLowerCase())
         )
-      : requests
+      : requestStore.requests
   );
 
   // UI state for editing and sending
-  let url: string = $state("");
-  let cmd: string = $state("");
-  let sendData: string = $state("");
-  let receivedData: string = $state("");
+  let url = $derived(requestStore.currentRequest?.url);
+  let cmd = $derived(requestStore.currentRequest?.cmd);
+  let sendData = $derived(requestStore.currentRequest?.body);
+  let receivedData = $derived(requestStore.currentRequest?.received || "");
+
   let isSending: boolean = $state(false);
   let statusText: string = $state("Ready");
   let requestTime: number | null = $state(null);
 
-  let selectedRequest: RequestItem | null = $state(null);
   let history: { id: number; timestamp: string; execution_time?: number }[] =
     $state([]);
 
@@ -76,38 +71,23 @@
     if (!name) return;
     const colId = await dbAddCollection(name);
 
-    selectedCollection = colId;
-    envPackId = null;
-
-    collections.push({
+    appStore.collections.push({
       id: colId,
       name: name,
       pack_id: null,
     });
 
+    appStore.setCurrentCollection(colId);
+    envStore.setCurrentEnvPack(null);
+
     showAddDialog = false;
   }
 
   let showEnvConfig = $state(false);
-  let envPackId: number | null = $state(null);
-  let envLabel: string = $state("no ENV");
-  let envVars: EnvVar[] = $state([]);
 
   async function handleEnvSelect(packId: number | null) {
-    envPackId = packId;
-    await refreshEnvVars(packId);
+    await envStore.setCurrentEnvPack(packId);
     showEnvConfig = false;
-  }
-
-  async function refreshEnvVars(packId: number | null) {
-    if (packId !== null) {
-      const pack = await getEnvPack(packId);
-
-      envVars = pack?.vars ?? [];
-      envLabel = pack?.name ?? "no ENV";
-    } else {
-      envLabel = "no ENV";
-    }
   }
 
   function openEnvConfig() {
@@ -116,21 +96,7 @@
 
   async function closeEnvConfig() {
     showEnvConfig = false;
-    // Make sure to refresh environment variables when the dialog is closed
-    await refreshEnvVars(envPackId);
-  }
-
-  async function selectCollection(colId: number) {
-    selectedCollection = colId;
-    // Сохраняем выбранную коллекцию в настройках
-    await updateSetting("last_collection_id", colId);
-
-    requests = await getRequests(colId);
-    // load the pack_id for this collection
-    const coll = collections.find((c) => c.id === colId);
-    const pid = coll?.pack_id ?? null;
-    envPackId = pid;
-    await refreshEnvVars(pid);
+    // TODO: if has changes
   }
 
   // Удаление коллекции
@@ -139,34 +105,26 @@
       await dbDeleteCollection(colId);
 
       // Обновляем список коллекций
-      collections = await getCollections();
+      appStore.deleteCollection(colId);
+      requestStore.deleteAllRequests();
 
       // Если удалили текущую коллекцию, выбираем первую доступную
-      if (selectedCollection === colId) {
-        selectedCollection = collections.length > 0 ? collections[0].id : null;
-
-        if (selectedCollection) {
-          await selectCollection(selectedCollection);
-        } else {
-          // Если коллекций больше нет, очищаем всё
-          requests = [];
-          selectedRequest = null;
-          url = "";
-          cmd = "";
-          sendData = "";
-          receivedData = "";
-          history = [];
-          statusText = "Ready";
-        }
+      if (!appStore.currentCollection) {
+        // Если коллекций больше нет, очищаем всё
+        url = "";
+        cmd = "";
+        sendData = "";
+        receivedData = "";
+        history = [];
+        statusText = "Ready";
       }
     } catch (error) {
       console.error("Ошибка при удалении коллекции:", error);
-      alert("Не удалось удалить коллекцию");
     }
   }
 
   function selectRequest(req: RequestItem) {
-    selectedRequest = req;
+    requestStore.setCurrentRequest(req.id);
     // Сохраняем выбранный запрос в настройках
     updateSetting("last_request_id", req.id);
 
@@ -194,8 +152,14 @@
 
     try {
       // Process environment variables in URL and JSON data
-      const processedUrl = processEnvVars(url, envVars);
-      const processedData = processEnvVars(sendData, envVars);
+      const processedUrl = processEnvVars(
+        url || "",
+        envStore.currentEnvPack?.vars ?? []
+      );
+      const processedData = processEnvVars(
+        sendData || "",
+        envStore.currentEnvPack?.vars ?? []
+      );
 
       const result = (await invoke("send_tcp_request", {
         connection: processedUrl,
@@ -217,12 +181,12 @@
 
         statusText = `Done in ${(requestTime / 1000).toFixed(2)}s`;
 
-        if (selectedRequest) {
+        if (requestStore.currentRequest) {
           // Добавляем запись в историю и получаем её ID
           const historyId = await dbAddHistory(
-            selectedRequest.id,
-            sendData,
-            receivedData,
+            requestStore.currentRequest.id,
+            sendData || "",
+            receivedData || "",
             requestTime
           );
 
@@ -249,13 +213,13 @@
     }
 
     // update the request item
-    if (selectedRequest) {
+    if (requestStore.currentRequest) {
       await updateRequest({
-        requestId: selectedRequest.id,
-        name: selectedRequest.name,
-        url: url,
-        cmd: cmd,
-        body: sendData,
+        requestId: requestStore.currentRequest.id,
+        name: requestStore.currentRequest.name,
+        url: url || "",
+        cmd: cmd || "",
+        body: sendData || "",
       });
     }
   }
@@ -285,28 +249,18 @@
   function openAddRequest() {
     showAddReqDialog = true;
   }
-  async function confirmAddRequest(data: {
-    name: string;
-    url: string;
-    cmd: string;
-    body: string;
-  }) {
-    if (!selectedCollection) return;
-    const newRequestId = await dbAddRequest(
-      selectedCollection,
-      data.name,
-      data.url,
-      data.cmd,
-      data.body
-    );
-    requests = await getRequests(selectedCollection);
-    showAddReqDialog = false;
+  async function confirmAddRequest(cmd: string) {
+    if (!appStore.currentCollection) return;
 
-    // Find the newly created request and select it
-    const newRequest = requests.find((req) => req.id === newRequestId);
-    if (newRequest) {
-      selectRequest(newRequest);
-    }
+    await requestStore.addRequest({
+      collection_id: appStore.currentCollection.id,
+      name: cmd,
+      url: "{{host}}:{{port}}",
+      cmd,
+      body: "{}",
+    });
+
+    showAddReqDialog = false;
   }
 
   // Загрузка полных данных истории при клике на элемент
@@ -351,18 +305,12 @@
     try {
       await deleteRequest(requestToDelete);
 
-      // Обновляем список запросов
-      if (selectedCollection !== null) {
-        requests = await getRequests(selectedCollection);
-      }
+      const isDeletedEqualsCurrent =
+        requestStore.currentRequest?.id === requestToDelete;
+      requestStore.deleteRequest(requestToDelete);
 
       // Если удаляемый запрос был выбран, очищаем выбор
-      if (selectedRequest && selectedRequest.id === requestToDelete) {
-        selectedRequest = null;
-        url = "";
-        cmd = "";
-        sendData = "";
-        receivedData = "";
+      if (isDeletedEqualsCurrent) {
         history = [];
         statusText = "Ready";
       }
@@ -385,62 +333,13 @@
   async function restoreAppState() {
     try {
       // Сначала загружаем все коллекции
-      collections = await getCollections();
-      if (collections.length === 0) return;
-
-      // Получаем сохраненный ID коллекции
-      const lastCollectionId = await getSetting("last_collection_id");
-      let colId: number | null = null;
-
-      if (lastCollectionId) {
-        colId = parseInt(lastCollectionId);
-        // Проверяем, существует ли эта коллекция
-        if (!collections.some((c) => c.id === colId)) {
-          colId = collections[0]?.id ?? null;
-        }
-      } else {
-        colId = collections[0]?.id ?? null;
-      }
-
-      if (colId === null) return;
-
-      // Выбираем коллекцию
-      selectedCollection = colId;
-      const coll = collections.find((c) => c.id === colId);
-      const pid = coll?.pack_id ?? null;
-      envPackId = pid;
-      await refreshEnvVars(pid);
-
-      // Загружаем запросы этой коллекции
-      requests = await getRequests(colId);
-      if (requests.length === 0) return;
-
-      // Получаем сохраненный ID запроса
-      const lastRequestId = await getSetting("last_request_id");
-      let reqId: number | null = null;
-
-      if (lastRequestId) {
-        reqId = parseInt(lastRequestId);
-        // Проверяем, существует ли этот запрос в текущей коллекции
-        if (!requests.some((r) => r.id === reqId)) {
-          reqId = requests[0]?.id ?? null;
-        }
-      } else {
-        reqId = requests[0]?.id ?? null;
-      }
-
-      if (reqId === null) return;
+      await appStore.init();
 
       // Выбираем запрос
-      const req = requests.find((r) => r.id === reqId);
+      const req = requestStore.currentRequest;
       if (req) {
-        selectedRequest = req;
-        url = req.url || "";
-        cmd = req.cmd || "";
         sendData = JSON.stringify(JSON.parse(req.body || "{}"), null, 2);
-
-        // Загружаем историю
-        history = await getHistoryList(reqId);
+        history = await getHistoryList(req.id);
       }
     } catch (error) {
       console.error("Ошибка восстановления состояния:", error);
@@ -457,6 +356,14 @@
         e.preventDefault();
         openEnvConfig();
       }
+
+      // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) to send request
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (!isSending && requestStore.currentRequest) {
+          sendQuery();
+        }
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -466,7 +373,7 @@
   });
 
   $effect(() => {
-    void selectedRequest;
+    void requestStore.currentRequest;
 
     requestEditor?.updateEditorValue();
     responseEditor?.updateEditorValue();
@@ -525,9 +432,6 @@
   >
     <div class="p-2">
       <CommandMenu
-        {collections}
-        {selectedCollection}
-        onSelectCollection={selectCollection}
         onAddCollection={openAdd}
         onOpenEnvConfig={openEnvConfig}
         onDeleteCollection={handleDeleteCollection}
@@ -556,7 +460,7 @@
       {#each filteredRequests as req}
         <div
           class="group relative w-full flex items-center hover:bg-stone-600 rounded"
-          class:bg-stone-700={req === selectedRequest}
+          class:bg-stone-700={req.id === requestStore.currentRequest?.id}
         >
           <button
             class="w-full text-left cursor-pointer p-2 pr-8 flex-grow truncate"
@@ -580,7 +484,7 @@
     <UpdaterButton />
   </aside>
 
-  {#if selectedRequest}
+  {#if requestStore.currentRequest}
     <!-- Main Content -->
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Request Builder -->
@@ -589,9 +493,9 @@
       >
         <div class="flex flex-col gap-1">
           <EnvVarInput
-            bind:value={url}
+            bind:value={url!}
             placeholder="Host:Port"
-            {envVars}
+            envVars={envStore.currentEnvPack?.vars ?? []}
             className="rounded w-full"
           />
         </div>
@@ -660,7 +564,7 @@
           onclick={openEnvConfig}
           class="bg-stone-600 hover:bg-stone-500 px-4 rounded text-xs whitespace-nowrap"
         >
-          {envLabel}
+          {envStore.currentEnvPack?.name ?? "no ENV"}
         </button>
       </div>
 
@@ -673,10 +577,15 @@
           <StoneMonacoEditor
             bind:this={requestEditor}
             bind:isFocused={isRequestEditorFocused}
-            bind:value={sendData}
+            bind:value={sendData!}
             height="100%"
             options={{
               language: "json",
+            }}
+            onSendRequest={() => {
+              if (!isSending && requestStore.currentRequest) {
+                sendQuery();
+              }
             }}
           />
           {#if !sendData && !isRequestEditorFocused}
@@ -716,6 +625,11 @@
               readOnly: true,
               language: "json",
             }}
+            onSendRequest={() => {
+              if (!isSending && requestStore.currentRequest) {
+                sendQuery();
+              }
+            }}
           />
           {#if !receivedData}
             <div
@@ -726,7 +640,7 @@
             </div>
           {/if}
           <CopyButton
-            value={receivedData}
+            value={receivedData || ""}
             className="absolute top-2 right-2 bg-stone-600 rounded-md w-8 h-8"
             duration={1000}
           />
@@ -759,8 +673,6 @@
   <!-- Env Config Dialog -->
   <EnvConfigDialog
     open={showEnvConfig}
-    collectionId={selectedCollection}
-    bind:currentPackId={envPackId}
     onSelect={handleEnvSelect}
     onCancel={closeEnvConfig}
   />

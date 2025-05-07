@@ -9,6 +9,7 @@
     isFocused?: boolean;
     class?: string;
     options?: EditorType.IStandaloneEditorConstructionOptions;
+    onSendRequest?: () => void;
   };
 
   let {
@@ -18,6 +19,7 @@
     class: className = "",
     isPulse = $bindable(false),
     options = $bindable({}),
+    onSendRequest = $bindable(() => {}),
   }: Props = $props();
 
   let editorContainer: HTMLElement;
@@ -40,6 +42,11 @@
       wordWrap: "on",
       renderLineHighlightOnlyWhenFocus: true,
       ...options,
+    });
+
+    // Add keyboard shortcut handler
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      onSendRequest();
     });
 
     // Set up two-way binding

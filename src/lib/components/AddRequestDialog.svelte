@@ -2,26 +2,19 @@
   import { Dialog, Separator } from "bits-ui";
   import { X, Terminal } from "lucide-svelte";
 
-  export let open: boolean;
-  export let onConfirm: (data: {
-    name: string;
-    url: string;
-    cmd: string;
-    body: string;
-  }) => void;
-  export let onCancel: () => void;
+  interface Props {
+    open: boolean;
+    onConfirm: (cmd: string) => void;
+    onCancel: () => void;
+  }
 
-  let cmd = "";
+  let { open, onConfirm, onCancel }: Props = $props();
+
+  let cmd = $state("");
 
   function handleConfirm() {
     if (cmd.trim()) {
-      // Use cmd as the name and set default URL
-      onConfirm({
-        name: cmd,
-        url: "{{host}}:{{port}}",
-        cmd,
-        body: "{}",
-      });
+      onConfirm(cmd);
       cmd = "";
     }
   }

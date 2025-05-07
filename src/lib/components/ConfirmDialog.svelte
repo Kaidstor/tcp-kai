@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
-  import { X, AlertTriangle } from "lucide-svelte";
+  import { AlertTriangle } from "lucide-svelte";
 
   interface Props {
     open: boolean;
@@ -8,8 +8,9 @@
     message: string;
     confirmLabel?: string;
     cancelLabel?: string;
-    onConfirm: () => void;
+    onConfirm: (meta: unknown) => void;
     onCancel: () => void;
+    meta?: unknown;
   }
 
   let {
@@ -20,6 +21,7 @@
     cancelLabel = "Отмена",
     onConfirm,
     onCancel,
+    meta,
   }: Props = $props();
 </script>
 
@@ -52,7 +54,7 @@
           </button>
           <button
             onclick={() => {
-              onConfirm();
+              onConfirm(meta);
               open = false;
             }}
             class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded transition-colors text-sm"

@@ -11,6 +11,7 @@ export interface RequestItem {
   url?: string;
   cmd?: string;
   body?: string;
+  received?: string;
 }
 
 export interface HistoryEntry {
@@ -30,5 +31,5 @@ export interface EnvVar {
 export interface EnvPack {
   id: number;
   name: string;
-  vars: EnvVar[];
+  vars: EnvVar[] | null | undefined;
 } 

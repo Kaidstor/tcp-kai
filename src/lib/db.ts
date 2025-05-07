@@ -194,10 +194,23 @@ export async function getSetting(key: string): Promise<string | null> {
   return results.length > 0 ? results[0].value : null;
 }
 
+export async function getSettingAsNumber(key: string): Promise<number | null> {
+  const value = await getSetting(key);
+  return value ? parseInt(value) : null;
+}
+
 export async function updateSetting(key: string, value: string | number | null): Promise<void> {
+  try {
   await ensureDb();
   await db.execute(
-    'UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?;',
-    [value === null ? null : String(value), key]
-  );
-} 
+      'UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?;',
+      [value === null ? null : String(value), key]
+    );
+  } catch (error) {
+    console.error('Error updating setting:', error);
+    console.error('Key:', key);
+    console.error('Value:', value);
+
+    throw error;
+  }
+}

@@ -11,24 +11,16 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import type { Collection } from "$lib/types";
   import { onMount, onDestroy, tick } from "svelte";
+  import { appStore } from "$lib/store/app-store.svelte";
 
   interface Props {
-    collections: Collection[];
-    selectedCollection: number | null;
-    onSelectCollection: (id: number) => void;
     onAddCollection: () => void;
     onOpenEnvConfig: () => void;
     onDeleteCollection?: (id: number) => void;
   }
 
-  const {
-    collections = $bindable([]),
-    selectedCollection,
-    onSelectCollection,
-    onAddCollection,
-    onOpenEnvConfig,
-    onDeleteCollection,
-  }: Props = $props();
+  const { onAddCollection, onOpenEnvConfig, onDeleteCollection }: Props =
+    $props();
 
   let dialogOpen = $state(false);
   let searchValue = $state("");
@@ -94,7 +86,7 @@
             const collectionName = item.textContent?.trim();
 
             // Находим коллекцию по имени
-            const collection = collections.find(
+            const collection = appStore.collections.find(
               (c) => c.name === collectionName
             );
             if (collection) {
@@ -145,9 +137,11 @@
           const collectionId = parseInt(
             selectedValue.replace("select-collection-", "")
           );
-          const collection = collections.find((c) => c.id === collectionId);
+          const collection = appStore.collections.find(
+            (c) => c.id === collectionId
+          );
+
           if (collection) {
-            console.log("Found collection:", collection.name);
             showCollectionActions(collection);
           } else {
             console.log("Collection not found for ID:", collectionId);
@@ -196,7 +190,7 @@
         shortcut: "↵",
         icon: Database,
         action: () => {
-          onSelectCollection(collection.id);
+          appStore.setCurrentCollection(collection.id);
           resetSearch();
           dialogOpen = false;
         },
@@ -251,7 +245,7 @@
       } else if (value.startsWith("select-collection-")) {
         // Сразу выбираем коллекцию (основное действие при Enter)
         const collectionId = parseInt(value.replace("select-collection-", ""));
-        onSelectCollection(collectionId);
+        appStore.setCurrentCollection(collectionId);
         dialogOpen = false;
       }
     }
@@ -275,7 +269,7 @@
     currentTarget = {
       id: collection.id,
       name: collection.name,
-      isSelected: collection.id === selectedCollection,
+      isSelected: collection.id === appStore.currentCollection?.id,
     };
     // Переключаемся в режим действий
     currentMode = "actions";
@@ -283,7 +277,9 @@
   }
 
   function getSelectedCollectionName() {
-    const selected = collections.find((c) => c.id === selectedCollection);
+    const selected = appStore.collections.find(
+      (c) => c.id === appStore.currentCollection?.id
+    );
     return selected ? selected.name : "Выберите коллекцию";
   }
 
@@ -408,7 +404,7 @@
                     Назад
                   </Command.Item>
                 {:else}
-                  {#each collections as collection}
+                  {#each appStore.collections as collection}
                     <Command.Item
                       value={`select-collection-${collection.id}`}
                       onSelect={() =>
@@ -420,7 +416,7 @@
                       <Database class="w-4 h-4 text-stone-400" />
                       <span class="flex-1 truncate">{collection.name}</span>
 
-                      {#if selectedCollection === collection.id}
+                      {#if collection.id === appStore.currentCollection?.id}
                         <span
                           class="px-1.5 py-0.5 text-xs rounded bg-stone-700 text-stone-300"
                         >
