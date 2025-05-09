@@ -85,11 +85,6 @@
 
   let showEnvConfig = $state(false);
 
-  async function handleEnvSelect(packId: number | null) {
-    await envStore.setCurrentEnvPack(packId);
-    showEnvConfig = false;
-  }
-
   function openEnvConfig() {
     showEnvConfig = true;
   }
@@ -671,11 +666,7 @@
   />
 
   <!-- Env Config Dialog -->
-  <EnvConfigDialog
-    open={showEnvConfig}
-    onSelect={handleEnvSelect}
-    onCancel={closeEnvConfig}
-  />
+  <EnvConfigDialog open={showEnvConfig} onCancel={closeEnvConfig} />
 
   <!-- Confirm Dialog -->
   <ConfirmDialog

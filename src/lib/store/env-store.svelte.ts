@@ -1,5 +1,13 @@
-import { addEnvPack, deleteEnvPack, getEnvPacks, updateEnvPack, updateEnvPackName } from "$lib/db";
+import {
+  addEnvPack,
+  deleteEnvPack,
+  getEnvPacks,
+  updateEnvPack,
+  updateEnvPackName,
+  updateEnvPackCollectionId,
+} from "$lib/db";
 import type { EnvPack } from "$lib/types";
+import { appStore } from "./app-store.svelte";
 
 class EnvStore {
   envPacks = $state<EnvPack[]>([]);
@@ -37,8 +45,10 @@ class EnvStore {
   async addEnvPack(name: string) {
     const trimmedName = name.trim();
     if (trimmedName) {
-      const newPackId = await addEnvPack(trimmedName);
-      this.envPacks.push({ id: newPackId, name: trimmedName, vars: [] });
+      const currentCollectionId = appStore.currentCollection?.id ?? null;
+      const newPackId = await addEnvPack(trimmedName, [], currentCollectionId);
+      console.log("newPackId", newPackId);
+      this.envPacks.push({ id: newPackId, name: trimmedName, vars: [], collection_id: currentCollectionId });
     }
   }
 
@@ -55,11 +65,35 @@ class EnvStore {
     this.envPacks = this.envPacks.map((pack) =>
       pack.id === id ? { ...pack, name } : pack
     );
+    if (this.currentEnvPack?.id === id) {
+      this.currentEnvPack.name = name;
+    }
   }
 
   async updateCurrentEnvPackVars() {
     if (this.currentEnvPack) {
       await updateEnvPack(this.currentEnvPack.id, this.currentEnvPack.vars ?? []);
+    }
+  }
+
+  async toggleEnvPackScope(packId: number) {
+    const packIndex = this.envPacks.findIndex((p) => p.id === packId);
+    if (packIndex === -1) return;
+
+    const packToUpdate = this.envPacks[packIndex];
+    let newCollectionId: number | null = null;
+
+    if (packToUpdate.collection_id === null) {
+      newCollectionId = appStore.currentCollection?.id ?? null;
+    } else {
+      newCollectionId = null;
+    }
+
+    await updateEnvPackCollectionId(packId, newCollectionId);
+
+    this.envPacks[packIndex] = { ...packToUpdate, collection_id: newCollectionId };
+    if (this.currentEnvPack?.id === packId) {
+      this.currentEnvPack.collection_id = newCollectionId;
     }
   }
 }

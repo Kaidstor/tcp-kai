@@ -4,6 +4,8 @@
   import { onMount } from "svelte";
   import { initUpdater } from "$lib/updater";
 
+  let { children } = $props();
+
   onMount(() => {
     const cleanup = initUpdater();
 
@@ -13,4 +15,4 @@
   });
 </script>
 
-<slot />
+{@render children()}

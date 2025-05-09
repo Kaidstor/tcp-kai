@@ -32,4 +32,12 @@ export interface EnvPack {
   id: number;
   name: string;
   vars: EnvVar[] | null | undefined;
+  collection_id?: number | null; // Link to a specific collection, or null if global
 } 
+
+export interface EnvPackRow extends Omit<EnvPack, 'vars'> {
+  id: number;
+  name: string;
+  vars: string | null | undefined;
+  collection_id?: number | null; // Link to a specific collection, or null if global
+}

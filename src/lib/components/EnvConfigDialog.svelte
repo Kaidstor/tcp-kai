@@ -8,26 +8,24 @@
     Save,
     Database,
     Pen,
+    Globe,
+    Link,
   } from "lucide-svelte";
   import InputDialog from "./InputDialog.svelte";
   import { updateEnvPack, updateCollectionPack } from "$lib/db";
 
-  import type { EnvPack, EnvVar } from "$lib/types";
   import { envStore } from "$lib/store/env-store.svelte";
   import { appStore } from "$lib/store/app-store.svelte";
 
   interface Props {
     open: boolean;
-    onSelect: (packId: number | null) => void;
     onCancel: () => void;
   }
 
-  let { open, onSelect, onCancel }: Props = $props();
+  let { open, onCancel }: Props = $props();
 
   let isEditingPackName = $state(false);
   let editedPackName = $state("");
-
-  let selectedPack: EnvPack | null = $state(null);
 
   // New variable input
   let newKey = $state("");
@@ -93,8 +91,8 @@
         envStore.currentEnvPack.id
       );
 
-      // Notify parent about selection first
-      onSelect(envStore.currentEnvPack.id);
+      await envStore.setCurrentEnvPack(envStore.currentEnvPack.id);
+      onCancel();
 
       // Don't set dialog state directly, let parent component handle it
       // open = false; // <-- Удаляем эту строку
@@ -110,6 +108,11 @@
 
   function changeSelectedPackId(id: number) {
     envStore.setCurrentEnvPack(id);
+  }
+
+  async function handleConfirmAddPack(name: string) {
+    if (!name.trim()) return;
+    await envStore.addEnvPack(name.trim());
   }
 </script>
 
@@ -144,10 +147,20 @@
             {#if envStore.currentEnvPack?.id !== null}
               <button
                 onclick={activatePack}
-                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md transition-colors text-sm inline-flex items-center space-x-1"
+                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md transition-colors text-sm inline-flex items-center space-x-1 {appStore
+                  .currentCollection?.pack_id === envStore.currentEnvPack?.id
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''}"
+                disabled={appStore.currentCollection?.pack_id ===
+                  envStore.currentEnvPack?.id}
               >
                 <Check size="0.9em" />
-                <span>Применить</span>
+                <span
+                  >{appStore.currentCollection?.pack_id ===
+                  envStore.currentEnvPack?.id
+                    ? "Применен"
+                    : "Применить"}</span
+                >
               </button>
             {/if}
           </div>
@@ -157,52 +170,65 @@
       <div class="flex flex-1 overflow-hidden">
         <!-- Left sidebar: Packs -->
         <div class="w-68 border-r border-stone-700 p-4 flex flex-col h-full">
-          <h3 class="text-sm font-medium text-stone-300 mb-2">
-            Паки переменных
-          </h3>
-
           <div class="overflow-y-auto flex-1">
             <div class="space-y-1">
-              {#each envStore.envPacks as pack}
-                <button
-                  onclick={() => changeSelectedPackId(pack.id)}
-                  class="w-full text-left p-2 rounded-md transition-colors flex justify-between items-center group {envStore
-                    .currentEnvPack?.id === pack.id
-                    ? 'bg-stone-600'
-                    : 'hover:bg-stone-700'}"
-                >
-                  <span class="truncate font-medium text-sm">{pack.name}</span>
-                </button>
+              {#each envStore.envPacks as pack (pack.id)}
+                {#if pack.collection_id === null || pack.collection_id === appStore.currentCollection?.id}
+                  <button
+                    onclick={() => changeSelectedPackId(pack.id)}
+                    class="w-full text-left p-2 rounded-md transition-colors flex justify-between items-center group {envStore
+                      .currentEnvPack?.id === pack.id
+                      ? 'bg-stone-600'
+                      : 'hover:bg-stone-700'}"
+                  >
+                    <div class="flex items-center gap-2">
+                      {#if pack.collection_id === null}
+                        <Globe size="0.9em" class="text-sky-400" />
+                      {:else}
+                        <Link size="0.9em" class="text-amber-400" />
+                      {/if}
+                      <span class="truncate font-medium text-sm"
+                        >{pack.name}</span
+                      >
+                    </div>
+                    {#if appStore.currentCollection?.pack_id === pack.id}
+                      <span
+                        class="text-xs px-1.5 py-0.5 bg-blue-500 text-white rounded-sm"
+                        >Active</span
+                      >
+                    {/if}
+                  </button>
+                {/if}
               {/each}
             </div>
           </div>
 
-          <InputDialog
-            title="Добавить пак переменных"
-            label="Название пака"
-            placeholder="Введите название пака"
-            buttonText="Добавить"
-            onConfirm={envStore.addEnvPack}
-          >
-            <Dialog.Trigger
-              class="flex w-full items-center justify-center space-x-1 p-2 bg-stone-700 hover:bg-stone-600 rounded-md transition-colors text-sm"
+          <div class="mt-2">
+            <InputDialog
+              title="Добавить пак переменных"
+              label="Название пака"
+              placeholder="Введите название пака"
+              buttonText="Добавить"
+              onConfirm={handleConfirmAddPack}
             >
-              <Plus size="0.9em" />
-              <span>Добавить пак</span>
-            </Dialog.Trigger>
-          </InputDialog>
+              <Dialog.Trigger
+                class="flex w-full items-center justify-center space-x-1 p-2 bg-stone-700 hover:bg-stone-600 rounded-md transition-colors text-sm"
+              >
+                <Plus size="0.9em" />
+                <span>Добавить пак</span>
+              </Dialog.Trigger>
+            </InputDialog>
+          </div>
         </div>
 
         <!-- Right content: Variables Table -->
         <div class="flex-1 flex flex-col h-full">
           <div class="p-4 flex-1 overflow-hidden flex flex-col gap-4">
             <div class="flex justify-between items-center h-8">
-              <h3
-                class="font-medium text-stone-300 mb-2 flex gap-2 items-center"
-              >
+              <h3 class="font-medium text-stone-300 flex gap-2 items-center">
                 <Database size="1.1em" class="text-stone-400" />
-                {#if envStore.envPacks.length > 0}
-                  {#if isEditingPackName && envStore.currentEnvPack !== null}
+                {#if envStore.envPacks.length > 0 && envStore.currentEnvPack}
+                  {#if isEditingPackName}
                     <input
                       bind:value={editedPackName}
                       class="bg-stone-700 border border-stone-600 focus:border-stone-500 px-2 py-1 rounded outline-none text-sm"
@@ -210,19 +236,53 @@
                       onkeydown={(e) => e.key === "Enter" && savePackName()}
                     />
                   {:else}
-                    {envStore.currentEnvPack?.name || "No Pack Selected"}
+                    <span>{envStore.currentEnvPack?.name}</span>
+                    <span class="text-xs text-stone-400 ml-1">
+                      {#if envStore.currentEnvPack.collection_id === null}
+                        (Global)
+                      {:else}
+                        (Linked to: {appStore.collections.find(
+                          (c) => c.id === envStore.currentEnvPack?.collection_id
+                        )?.name})
+                      {/if}
+                    </span>
                   {/if}
-                {:else}
+                {:else if envStore.envPacks.length === 0}
                   No environment packs
+                {:else}
+                  No Pack Selected
                 {/if}
               </h3>
 
-              {#if envStore.currentEnvPack !== null}
-                <div class="flex gap-2">
+              {#if envStore.currentEnvPack}
+                <div class="flex gap-2 items-center">
+                  <button
+                    title={envStore.currentEnvPack.collection_id === null
+                      ? appStore.currentCollection
+                        ? "Link to current collection"
+                        : "Link to collection (select one first)"
+                      : "Make Global"}
+                    onclick={() =>
+                      envStore.toggleEnvPackScope(envStore.currentEnvPack!.id)}
+                    class="p-1 hover:bg-stone-600 rounded-md text-stone-400 hover:text-white {envStore
+                      .currentEnvPack.collection_id === null &&
+                    !appStore.currentCollection
+                      ? 'opacity-50 cursor-not-allowed'
+                      : ''}"
+                    disabled={envStore.currentEnvPack.collection_id === null &&
+                      !appStore.currentCollection}
+                  >
+                    {#if envStore.currentEnvPack.collection_id === null}
+                      <Link size="0.9rem" />
+                    {:else}
+                      <Globe size="0.9rem" />
+                    {/if}
+                  </button>
                   {#if isEditingPackName}
                     <button
                       onclick={savePackName}
                       class="p-1 hover:bg-green-600 rounded-md text-green-400 hover:text-white"
+                      title="Save name"
                     >
                       <Save size="1rem" />
                     </button>
@@ -230,6 +290,7 @@
                     <button
                       onclick={startEditingPackName}
                       class="p-1 hover:bg-stone-600 rounded-md text-stone-400 hover:text-white"
+                      title="Edit name"
                     >
                       <Pen size="1rem" />
                     </button>
@@ -240,6 +301,7 @@
                       envStore.deleteEnvPack(envStore.currentEnvPack!.id);
                     }}
                     class="p-1 hover:bg-red-600 rounded-md text-red-400 hover:text-white"
+                    title="Delete pack"
                   >
                     <Trash2 size="1rem" />
                   </button>
@@ -303,7 +365,7 @@
             </div>
 
             <!-- Add New Variable -->
-            {#if selectedPack !== null}
+            {#if envStore.currentEnvPack !== null}
               <div class="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
                 <input
                   bind:value={newKey}

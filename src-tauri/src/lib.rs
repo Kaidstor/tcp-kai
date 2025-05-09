@@ -73,6 +73,16 @@ ALTER TABLE history ADD COLUMN execution_time REAL;
             .into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add_collection_id_to_env_packs".into(),
+            sql: r#"
+-- Add collection_id to env_packs to allow for global or collection-specific packs
+ALTER TABLE env_packs ADD COLUMN collection_id INTEGER REFERENCES collections(id) ON DELETE SET NULL;
+"#
+            .into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

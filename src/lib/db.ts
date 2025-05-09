@@ -1,5 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
-import type { Collection, EnvPack, HistoryEntry } from './types';
+import type { Collection, EnvPack, EnvPackRow, HistoryEntry } from './types';
 
 let db: Database;
 
@@ -16,10 +16,12 @@ export async function getCollections(): Promise<Collection[]> {
 }
 export async function addCollection(name: string): Promise<number> {
   await ensureDb();
-  await db.execute('INSERT INTO collections (name) VALUES (?);', [name]);
+  const result = await db.execute('INSERT INTO collections (name) VALUES (?);', [name]);
 
-  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
-  return idResult[0].id;
+  if (result.lastInsertId === undefined || result.lastInsertId === null) {
+    throw new Error("Failed to get last insert ID for collection.");
+  }
+  return result.lastInsertId;
 }
 
 export async function deleteCollection(id: number): Promise<void> {
@@ -37,13 +39,15 @@ export async function getRequests(collectionId: number): Promise<any[]> {
 }
 export async function addRequest(collectionId: number, name: string, url: string, cmd: string, body: string): Promise<number> {
   await ensureDb();
-  await db.execute(
+  const result = await db.execute(
     'INSERT INTO requests (collection_id, name, url, cmd, body) VALUES (?, ?, ?, ?, ?);',
     [collectionId, name, url, cmd, body]
   );
   // Get the last inserted ID
-  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
-  return idResult[0].id;
+  if (result.lastInsertId === undefined || result.lastInsertId === null) {
+    throw new Error("Failed to get last insert ID for request.");
+  }
+  return result.lastInsertId;
 }
 export async function updateRequest({requestId, name, url, cmd, body}: {requestId: number, name: string, url: string, cmd: string, body: string}): Promise<void> {
   await ensureDb();
@@ -89,14 +93,16 @@ export async function getHistoryItem(historyId: number): Promise<HistoryEntry | 
 
 export async function addHistory(requestId: number, sent: string, received: string, executionTime?: number): Promise<number> {
   await ensureDb();
-  await db.execute(
+  const result = await db.execute(
     'INSERT INTO history (request_id, sent, received, execution_time) VALUES (?, ?, ?, ?);',
     [requestId, sent, received, executionTime]
   );
   
   // Получаем ID вставленной записи
-  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
-  return idResult[0].id;
+  if (result.lastInsertId === undefined || result.lastInsertId === null) {
+    throw new Error("Failed to get last insert ID for history.");
+  }
+  return result.lastInsertId;
 }
 
 // Delete a history entry
@@ -108,30 +114,35 @@ export async function deleteHistory(id: number): Promise<void> {
 // Packs of environment variables
 export async function getEnvPacks(): Promise<EnvPack[]> {
   await ensureDb();
-  const rows: { id: number; name: string; vars: string }[] = await db.select(
-    'SELECT id, name, vars FROM env_packs;',
+  const rows: EnvPackRow[] = await db.select(
+    'SELECT id, name, vars, collection_id FROM env_packs;',
     [],
   );
-  return rows.map(({ id, name, vars }) => ({
+  
+  return rows.map(({ id, name, vars, collection_id }) => ({
     id,
     name,
-    vars: JSON.parse(vars),
+    vars: vars ? JSON.parse(vars) : null,
+    collection_id,
   }));
 }
 
 export async function addEnvPack(
   name: string,
   vars: { key: string; value: string }[] = [],
+  collectionId: number | null = null,
 ): Promise<number> {
   await ensureDb();
-  await db.execute(
-    'INSERT INTO env_packs (name, vars) VALUES (?, ?);',
-    [name, JSON.stringify(vars)],
+  const result = await db.execute(
+    'INSERT INTO env_packs (name, vars, collection_id) VALUES (?, ?, ?);',
+    [name, JSON.stringify(vars), collectionId],
   );
   
-  // Get the last inserted ID
-  const idResult = await db.select<{id: number}[]>('SELECT last_insert_rowid() as id;');
-  return idResult[0].id;
+  // Use the lastInsertId from the execute result
+  if (result.lastInsertId === undefined || result.lastInsertId === null) {
+    throw new Error("Failed to get last insert ID for env pack.");
+  }
+  return result.lastInsertId;
 }
 
 export async function deleteEnvPack(id: number): Promise<void> {
@@ -144,13 +155,15 @@ export async function getEnvPack(
   packId: number,
 ): Promise<EnvPack | null> {
   await ensureDb();
-  const rows: { id: number; name: string; vars: string }[] = await db.select(
-    'SELECT id, name, vars FROM env_packs WHERE id = ?;',
+  const rows: EnvPack[] = await db.select(
+    'SELECT id, name, vars, collection_id FROM env_packs WHERE id = ?;',
     [packId],
   );
   if (rows.length === 0) return null;
-  const { id, name, vars } = rows[0];
-  return { id, name, vars: JSON.parse(vars) };
+
+  const pack = rows[0];
+  
+  return { id: pack.id, name: pack.name, vars: JSON.parse(pack.vars as unknown as string), collection_id: pack.collection_id };
 }
 
 // Update the vars JSON of an existing pack
@@ -174,6 +187,18 @@ export async function updateEnvPackName(
   await db.execute(
     'UPDATE env_packs SET name = ? WHERE id = ?;',
     [name, packId],
+  );
+}
+
+// Update the collection_id of an existing pack
+export async function updateEnvPackCollectionId(
+  packId: number,
+  collectionId: number | null,
+): Promise<void> {
+  await ensureDb();
+  await db.execute(
+    'UPDATE env_packs SET collection_id = ? WHERE id = ?;',
+    [collectionId, packId],
   );
 }
 
