@@ -1,11 +1,4 @@
-import {
-  addEnvPack,
-  deleteEnvPack,
-  getEnvPacks,
-  updateEnvPack,
-  updateEnvPackName,
-  updateEnvPackCollectionId,
-} from "$lib/db";
+import { db } from "$lib/db/repositories";
 import type { EnvPack } from "$lib/types";
 import { appStore } from "./app-store.svelte";
 
@@ -19,7 +12,7 @@ class EnvStore {
   }
 
   async init() {
-    this.envPacks = await getEnvPacks();
+    this.envPacks = await db.envPacks.getAll();
     this.currentEnvPack = this.envPacks[0] ?? null;
   }
 
@@ -46,14 +39,14 @@ class EnvStore {
     const trimmedName = name.trim();
     if (trimmedName) {
       const currentCollectionId = appStore.currentCollection?.id ?? null;
-      const newPackId = await addEnvPack(trimmedName, [], currentCollectionId);
+      const newPackId = await db.envPacks.add(trimmedName, [], currentCollectionId);
       console.log("newPackId", newPackId);
       this.envPacks.push({ id: newPackId, name: trimmedName, vars: [], collection_id: currentCollectionId });
     }
   }
 
   async deleteEnvPack(id: number) {
-    await deleteEnvPack(id);
+    await db.envPacks.delete(id);
     if (this.currentEnvPack?.id === id) {
       this.currentEnvPack = null;
     }
@@ -61,7 +54,7 @@ class EnvStore {
   }
 
   async updateEnvPackName(id: number, name: string) {
-    await updateEnvPackName(id, name);
+    await db.envPacks.updateName(id, name);
     this.envPacks = this.envPacks.map((pack) =>
       pack.id === id ? { ...pack, name } : pack
     );
@@ -72,7 +65,7 @@ class EnvStore {
 
   async updateCurrentEnvPackVars() {
     if (this.currentEnvPack) {
-      await updateEnvPack(this.currentEnvPack.id, this.currentEnvPack.vars ?? []);
+      await db.envPacks.updateVars(this.currentEnvPack.id, this.currentEnvPack.vars ?? []);
     }
   }
 
@@ -89,7 +82,7 @@ class EnvStore {
       newCollectionId = null;
     }
 
-    await updateEnvPackCollectionId(packId, newCollectionId);
+    await db.envPacks.updateCollectionId(packId, newCollectionId);
 
     this.envPacks[packIndex] = { ...packToUpdate, collection_id: newCollectionId };
     if (this.currentEnvPack?.id === packId) {

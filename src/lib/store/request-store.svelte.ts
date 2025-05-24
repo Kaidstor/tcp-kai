@@ -1,4 +1,4 @@
-import { addRequest, deleteRequest, getRequests } from "$lib/db";
+import { db } from "$lib/db/repositories";
 import type { RequestItem } from "$lib/types";
 
 class RequestStore {
@@ -18,7 +18,7 @@ class RequestStore {
   }
   
   async loadRequests(collectionId: number, { currentRequestId = null }: { currentRequestId?: number | null } = {}) {
-    this.requests = await getRequests(collectionId);
+    this.requests = await db.requests.getByCollection(collectionId);
     
     if (currentRequestId) {
       this.setCurrentRequest(currentRequestId);
@@ -26,7 +26,7 @@ class RequestStore {
   }
 
   async addRequest(request: Omit<RequestItem, 'id'>) {
-    const newRequestId = await addRequest(
+    const newRequestId = await db.requests.add(
       request.collection_id, 
       request.name, 
       request.url || "", 
@@ -46,7 +46,7 @@ class RequestStore {
   }
 
   async deleteRequest(id: number) {
-    await deleteRequest(id);
+    await db.requests.delete(id);
     this.requests = this.requests.filter((r) => r.id !== id);
 
     if (this.currentRequest?.id === id) {

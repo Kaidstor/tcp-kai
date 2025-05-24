@@ -1,16 +1,5 @@
 <script lang="ts">
-  import {
-    addCollection as dbAddCollection,
-    addRequest as dbAddRequest,
-    updateRequest,
-    getHistoryList,
-    deleteHistory,
-    getHistoryItem,
-    updateSetting,
-    deleteRequest,
-    addHistory as dbAddHistory,
-    deleteCollection as dbDeleteCollection,
-  } from "$lib/db";
+  import { db } from "$lib/db/repositories";
   import { invoke } from "@tauri-apps/api/core";
   import { Trash2, History, FileJson, FileOutput } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
@@ -59,8 +48,11 @@
   let statusText: string = $state("Ready");
   let requestTime: number | null = $state(null);
 
-  let history: { id: number; timestamp: string; execution_time?: number }[] =
-    $state([]);
+  let history: {
+    id: number;
+    timestamp: string;
+    execution_time?: number | null;
+  }[] = $state([]);
 
   // add collection via Dialog component
   let showAddDialog = $state(false);
@@ -69,7 +61,7 @@
   }
   async function confirmAdd(name: string) {
     if (!name) return;
-    const colId = await dbAddCollection(name);
+    const colId = await db.collections.add(name);
 
     appStore.collections.push({
       id: colId,
@@ -97,7 +89,7 @@
   // Удаление коллекции
   async function handleDeleteCollection(colId: number) {
     try {
-      await dbDeleteCollection(colId);
+      await db.collections.delete(colId);
 
       // Обновляем список коллекций
       appStore.deleteCollection(colId);
@@ -121,7 +113,7 @@
   function selectRequest(req: RequestItem) {
     requestStore.setCurrentRequest(req.id);
     // Сохраняем выбранный запрос в настройках
-    updateSetting("last_request_id", req.id);
+    db.settings.updateSetting("last_request_id", req.id);
 
     url = req.url || "";
     cmd = req.cmd || "";
@@ -130,7 +122,7 @@
     statusText = "Ready";
 
     // Загружаем только список истории без полных данных
-    getHistoryList(req.id).then((h) => (history = h));
+    db.history.getListByRequest(req.id).then((h) => (history = h));
   }
 
   let requestFlags: Record<string, boolean> = {};
@@ -178,7 +170,7 @@
 
         if (requestStore.currentRequest) {
           // Добавляем запись в историю и получаем её ID
-          const historyId = await dbAddHistory(
+          const historyId = await db.history.add(
             requestStore.currentRequest.id,
             sendData || "",
             receivedData || "",
@@ -209,8 +201,7 @@
 
     // update the request item
     if (requestStore.currentRequest) {
-      await updateRequest({
-        requestId: requestStore.currentRequest.id,
+      await db.requests.updateRequest(requestStore.currentRequest.id, {
         name: requestStore.currentRequest.name,
         url: url || "",
         cmd: cmd || "",
@@ -262,7 +253,7 @@
   async function loadHistoryItem(historyId: number) {
     statusText = "Загрузка...";
     try {
-      const item = await getHistoryItem(historyId);
+      const item = await db.history.findById(historyId);
       if (item) {
         sendData = item.sent || "";
         receivedData = item.received || "";
@@ -298,7 +289,7 @@
     if (requestToDelete === null) return;
 
     try {
-      await deleteRequest(requestToDelete);
+      await db.requests.delete(requestToDelete);
 
       const isDeletedEqualsCurrent =
         requestStore.currentRequest?.id === requestToDelete;
@@ -334,7 +325,7 @@
       const req = requestStore.currentRequest;
       if (req) {
         sendData = JSON.stringify(JSON.parse(req.body || "{}"), null, 2);
-        history = await getHistoryList(req.id);
+        history = await db.history.getListByRequest(req.id);
       }
     } catch (error) {
       console.error("Ошибка восстановления состояния:", error);
@@ -537,7 +528,7 @@
                   <div class="flex items-center space-x-2">
                     <button
                       onclick={() => {
-                        deleteHistory(entry.id).then(() => {
+                        db.history.delete(entry.id).then(() => {
                           // Удаляем запись локально, без повторного запроса к БД
                           history = history.filter(
                             (item) => item.id !== entry.id

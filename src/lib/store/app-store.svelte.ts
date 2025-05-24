@@ -1,4 +1,4 @@
-import { updateSetting as dbUpdateSetting, getCollections, getSetting, getSettingAsNumber } from "$lib/db";
+import { db } from "$lib/db/repositories";
 import type { Collection } from "$lib/types";
 import { envStore } from "./env-store.svelte";
 import { requestStore } from "./request-store.svelte";
@@ -10,8 +10,8 @@ class AppStore {
   constructor() {}
 
   async init() {
-    this.collections = await getCollections();
-    const lastCollectionId = await getSettingAsNumber("last_collection_id") ?? this.collections[0]?.id;
+    this.collections = await db.collections.getAll();
+    const lastCollectionId = await db.settings.getAsNumber("last_collection_id") ?? this.collections[0]?.id;
 
     if (!lastCollectionId) return;
     
@@ -19,7 +19,7 @@ class AppStore {
     await this.setCurrentCollection(colId);
 
     await requestStore.loadRequests(colId, {
-        currentRequestId: await getSettingAsNumber("last_request_id") 
+        currentRequestId: await db.settings.getAsNumber("last_request_id") 
     });
 
     await envStore.init();
@@ -32,7 +32,7 @@ class AppStore {
   async setCurrentCollection(id: number | null, { updateSetting = true }: { updateSetting?: boolean } = {}) {
     try {
       if (updateSetting) {
-        await dbUpdateSetting("last_collection_id", id);
+        await db.settings.updateSetting("last_collection_id", id);
       }
 
       if (id) {

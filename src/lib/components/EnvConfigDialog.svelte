@@ -12,7 +12,7 @@
     Link,
   } from "lucide-svelte";
   import InputDialog from "./InputDialog.svelte";
-  import { updateEnvPack, updateCollectionPack } from "$lib/db";
+  import { db } from "$lib/db/repositories";
 
   import { envStore } from "$lib/store/env-store.svelte";
   import { appStore } from "$lib/store/app-store.svelte";
@@ -70,7 +70,7 @@
 
   async function saveChanges() {
     if (!envStore.currentEnvPack) return;
-    await updateEnvPack(
+    await db.envPacks.updateVars(
       envStore.currentEnvPack.id,
       envStore.currentEnvPack.vars ?? []
     );
@@ -86,7 +86,7 @@
       }
 
       // Update the collection's pack reference
-      await updateCollectionPack(
+      await db.collections.updatePack(
         appStore.currentCollection.id,
         envStore.currentEnvPack.id
       );
