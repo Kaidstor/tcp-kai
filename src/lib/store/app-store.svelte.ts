@@ -11,8 +11,6 @@ class AppStore {
 
   async init() {
     await envStore.init();
-    // 1. Применяем затухание веса ко всем запросам
-    await db.requests.decayWeights();
 
     // 2. Загружаем коллекции и остальное состояние
     this.collections = await db.collections.getAll();

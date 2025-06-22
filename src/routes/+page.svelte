@@ -9,7 +9,6 @@
   import AddCollectionDialog from "$lib/components/AddCollectionDialog.svelte";
   import EnvConfigDialog from "$lib/components/EnvConfigDialog.svelte";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
-  import CopyButton from "$lib/components/CopyButton.svelte";
   import EnvVarInput from "$lib/components/EnvVarInput.svelte";
   import CommandMenu from "$lib/components/CommandMenu.svelte";
   import type { RequestItem } from "$lib/db/schema";
@@ -105,16 +104,25 @@
     }
   }
 
-  function selectRequest(req: RequestItem) {
+  async function selectRequest(req: RequestItem) {
     requestStore.setCurrentRequest(req.id);
     // Сохраняем выбранный запрос в настройках
     db.settings.updateSetting("last_request_id", req.id);
 
     url = req.url || "";
     cmd = req.cmd || "";
-    sendData = JSON.stringify(JSON.parse(req.body || "{}"), null, 2);
-    receivedData = "";
     statusText = "Ready";
+
+    const latestHistory = await db.history.getLatestByRequest(req.id);
+    if (latestHistory) {
+      sendData = latestHistory.sent;
+      receivedData = latestHistory.received;
+      requestTime = latestHistory.execution_time;
+    } else {
+      sendData = JSON.stringify(JSON.parse(req.body || "{}"), null, 2);
+      receivedData = "";
+      requestTime = null;
+    }
 
     // Загружаем только список истории без полных данных
     db.history.getListByRequest(req.id).then((h) => (history = h));
@@ -169,7 +177,10 @@
             requestTime,
           );
 
-          // Увеличиваем вес использованного запроса
+          // Применяем затухание веса ко всем запросам
+          await db.requests.decayWeights();
+
+          // Увеличиваем вес использованного запроса (вызывается только для текущего запроса)
           await db.requests.incrementWeight(requestStore.currentRequest.id);
 
           // Добавляем новую запись в начало списка истории
@@ -418,7 +429,7 @@
         <span>Requests</span>
         <button
           onclick={openAddRequest}
-          class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded">+ New</button
+          class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded">+</button
         >
       </h2>
     </div>
@@ -612,11 +623,6 @@
               <p class="text-stone-500">Response</p>
             </div>
           {/if}
-          <CopyButton
-            value={receivedData || ""}
-            className="absolute top-2 right-2 bg-stone-600 rounded-md w-8 h-8"
-            duration={1000}
-          />
         </div>
       </div>
 

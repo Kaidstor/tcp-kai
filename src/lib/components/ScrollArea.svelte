@@ -1,14 +1,13 @@
 <script lang="ts">
   import { ScrollArea } from "bits-ui";
 
-  let { children, class: className }: { children: any; class: string } =
-    $props();
+  let { children, class: className }: { children: any; class: string } = $props();
 </script>
 
 <ScrollArea.Root
   class="border-dark-10 bg-background-alt shadow-card relative overflow-hidden px-2 py-2 {className}"
 >
-  <ScrollArea.Viewport class="h-full w-full">
+  <ScrollArea.Viewport class="h-full w-full [&>div]:min-w-full!">
     {@render children()}
   </ScrollArea.Viewport>
   <ScrollArea.Scrollbar
