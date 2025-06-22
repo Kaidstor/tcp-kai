@@ -60,7 +60,7 @@
         type: "var",
         content: match[0],
         name: varName,
-        exists: keys.includes(varName),
+        exists: keys?.includes(varName),
       });
 
       lastIndex = match.index + match[0].length;

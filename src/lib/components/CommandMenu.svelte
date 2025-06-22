@@ -9,7 +9,7 @@
     ChevronLeft,
   } from "lucide-svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
-  import type { Collection } from "$lib/types";
+  import type { Collection } from "$lib/db/schema";
   import { onMount, onDestroy, tick } from "svelte";
   import { appStore } from "$lib/store/app-store.svelte";
 

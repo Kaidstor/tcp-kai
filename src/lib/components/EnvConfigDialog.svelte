@@ -19,10 +19,9 @@
 
   interface Props {
     open: boolean;
-    onCancel: () => void;
   }
 
-  let { open, onCancel }: Props = $props();
+  let { open }: Props = $props();
 
   let isEditingPackName = $state(false);
   let editedPackName = $state("");
@@ -92,7 +91,7 @@
       );
 
       await envStore.setCurrentEnvPack(envStore.currentEnvPack.id);
-      onCancel();
+      open = false;
 
       // Don't set dialog state directly, let parent component handle it
       // open = false; // <-- Удаляем эту строку
@@ -103,7 +102,7 @@
 
   function cancel() {
     isEditingPackName = false;
-    onCancel();
+    open = false;
   }
 
   function changeSelectedPackId(id: number) {

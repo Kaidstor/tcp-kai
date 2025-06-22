@@ -1,5 +1,5 @@
 import { db } from "$lib/db/repositories";
-import type { Collection } from "$lib/types";
+import type { Collection } from "$lib/db/schema";
 import { envStore } from "./env-store.svelte";
 import { requestStore } from "./request-store.svelte";
 
@@ -10,39 +10,48 @@ class AppStore {
   constructor() {}
 
   async init() {
+    await envStore.init();
+    // 1. Применяем затухание веса ко всем запросам
+    await db.requests.decayWeights();
+
+    // 2. Загружаем коллекции и остальное состояние
     this.collections = await db.collections.getAll();
-    const lastCollectionId = await db.settings.getAsNumber("last_collection_id") ?? this.collections[0]?.id;
+    const lastCollectionId =
+      (await db.settings.getAsNumber("last_collection_id")) ?? this.collections[0]?.id;
 
     if (!lastCollectionId) return;
-    
+
     const colId = lastCollectionId;
     await this.setCurrentCollection(colId);
 
     await requestStore.loadRequests(colId, {
-        currentRequestId: await db.settings.getAsNumber("last_request_id") 
+      currentRequestId: await db.settings.getAsNumber("last_request_id"),
     });
-
-    await envStore.init();
   }
 
   getCollection(id: number | null) {
     return id ? this.collections.find((c) => c.id === id) : undefined;
   }
 
-  async setCurrentCollection(id: number | null, { updateSetting = true }: { updateSetting?: boolean } = {}) {
+  async setCurrentCollection(
+    id: number | null,
+    { updateSetting = true }: { updateSetting?: boolean } = {},
+  ) {
     try {
       if (updateSetting) {
         await db.settings.updateSetting("last_collection_id", id);
       }
 
+      const newCollection = this.getCollection(id);
+
       if (id) {
         await requestStore.loadRequests(id);
-        await envStore.setCurrentEnvPack(this.currentCollection?.pack_id);
+        await envStore.setCurrentEnvPack(newCollection?.pack_id);
       }
 
-      this.currentCollection = this.getCollection(id);
+      this.currentCollection = newCollection;
     } catch (error) {
-      console.error('Error setting current collection:', error);
+      console.error("Error setting current collection:", error);
     }
   }
 
@@ -60,4 +69,3 @@ class AppStore {
 }
 
 export const appStore = new AppStore();
-

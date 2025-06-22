@@ -1,19 +1,14 @@
 import { db } from "$lib/db/repositories";
-import type { EnvPack } from "$lib/types";
+import type { EnvPack } from "$lib/db/schema";
 import { appStore } from "./app-store.svelte";
 
 class EnvStore {
   envPacks = $state<EnvPack[]>([]);
-  originalEnvPackVars = $state<EnvPack["vars"] | null | undefined>(null);
-  currentEnvPack = $state<EnvPack | null | undefined>(null);
-
-  constructor() {
-    this.init();
-  }
+  originalEnvPackVars = $state<EnvPack["vars"] | undefined>(undefined);
+  currentEnvPack = $state<EnvPack | null>(null);
 
   async init() {
     this.envPacks = await db.envPacks.getAll();
-    this.currentEnvPack = this.envPacks[0] ?? null;
   }
 
   async setCurrentEnvPack(id: number | null | undefined) {
@@ -22,7 +17,7 @@ class EnvStore {
       return;
     }
 
-    this.currentEnvPack = this.envPacks.find((pack) => pack.id === id);
+    this.currentEnvPack = this.envPacks.find((pack) => pack.id === id) ?? null;
 
     this.originalEnvPackVars = this.currentEnvPack
       ? JSON.parse(JSON.stringify(this.currentEnvPack.vars))
@@ -41,7 +36,12 @@ class EnvStore {
       const currentCollectionId = appStore.currentCollection?.id ?? null;
       const newPackId = await db.envPacks.add(trimmedName, [], currentCollectionId);
       console.log("newPackId", newPackId);
-      this.envPacks.push({ id: newPackId, name: trimmedName, vars: [], collection_id: currentCollectionId });
+      this.envPacks.push({
+        id: newPackId,
+        name: trimmedName,
+        vars: [],
+        collection_id: currentCollectionId,
+      });
     }
   }
 
@@ -56,7 +56,7 @@ class EnvStore {
   async updateEnvPackName(id: number, name: string) {
     await db.envPacks.updateName(id, name);
     this.envPacks = this.envPacks.map((pack) =>
-      pack.id === id ? { ...pack, name } : pack
+      pack.id === id ? { ...pack, name } : pack,
     );
     if (this.currentEnvPack?.id === id) {
       this.currentEnvPack.name = name;
@@ -65,7 +65,10 @@ class EnvStore {
 
   async updateCurrentEnvPackVars() {
     if (this.currentEnvPack) {
-      await db.envPacks.updateVars(this.currentEnvPack.id, this.currentEnvPack.vars ?? []);
+      await db.envPacks.updateVars(
+        this.currentEnvPack.id,
+        this.currentEnvPack.vars ?? [],
+      );
     }
   }
 

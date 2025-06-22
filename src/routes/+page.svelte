@@ -12,7 +12,7 @@
   import CopyButton from "$lib/components/CopyButton.svelte";
   import EnvVarInput from "$lib/components/EnvVarInput.svelte";
   import CommandMenu from "$lib/components/CommandMenu.svelte";
-  import type { RequestItem, EnvVar } from "$lib/types";
+  import type { RequestItem } from "$lib/db/schema";
   import { processEnvVars } from "$lib/utils";
   import { onMount } from "svelte";
   import UpdaterButton from "$lib/components/UpdaterButton.svelte";
@@ -33,9 +33,9 @@
   let filteredRequests = $derived(
     reqSearch
       ? requestStore.requests.filter((r) =>
-          r.name.toLowerCase().includes(reqSearch.toLowerCase())
+          r.name.toLowerCase().includes(reqSearch.toLowerCase()),
         )
-      : requestStore.requests
+      : requestStore.requests,
   );
 
   // UI state for editing and sending
@@ -79,11 +79,6 @@
 
   function openEnvConfig() {
     showEnvConfig = true;
-  }
-
-  async function closeEnvConfig() {
-    showEnvConfig = false;
-    // TODO: if has changes
   }
 
   // Удаление коллекции
@@ -139,13 +134,10 @@
 
     try {
       // Process environment variables in URL and JSON data
-      const processedUrl = processEnvVars(
-        url || "",
-        envStore.currentEnvPack?.vars ?? []
-      );
+      const processedUrl = processEnvVars(url || "", envStore.currentEnvPack?.vars ?? []);
       const processedData = processEnvVars(
         sendData || "",
-        envStore.currentEnvPack?.vars ?? []
+        envStore.currentEnvPack?.vars ?? [],
       );
 
       const result = (await invoke("send_tcp_request", {
@@ -174,8 +166,11 @@
             requestStore.currentRequest.id,
             sendData || "",
             receivedData || "",
-            requestTime
+            requestTime,
           );
+
+          // Увеличиваем вес использованного запроса
+          await db.requests.incrementWeight(requestStore.currentRequest.id);
 
           // Добавляем новую запись в начало списка истории
           history.push({
@@ -244,6 +239,8 @@
       url: "{{host}}:{{port}}",
       cmd,
       body: "{}",
+      received: "",
+      weight: null,
     });
 
     showAddReqDialog = false;
@@ -289,14 +286,11 @@
     if (requestToDelete === null) return;
 
     try {
-      await db.requests.delete(requestToDelete);
-
-      const isDeletedEqualsCurrent =
-        requestStore.currentRequest?.id === requestToDelete;
-      requestStore.deleteRequest(requestToDelete);
+      // Используем новый метод с каскадным удалением истории
+      await requestStore.deleteRequest(requestToDelete);
 
       // Если удаляемый запрос был выбран, очищаем выбор
-      if (isDeletedEqualsCurrent) {
+      if (requestStore.currentRequest?.id === requestToDelete) {
         history = [];
         statusText = "Ready";
       }
@@ -387,10 +381,7 @@
       const relativeY = event.clientY - containerRect.top;
 
       // Calculate percentage (keep within 20-80% range)
-      let percentage = Math.min(
-        Math.max((relativeY / containerHeight) * 100, 20),
-        80
-      );
+      let percentage = Math.min(Math.max((relativeY / containerHeight) * 100, 20), 80);
       requestPanelHeight = `${percentage}%`;
 
       // Update the editors to reflect the new layout
@@ -423,14 +414,11 @@
         onDeleteCollection={handleDeleteCollection}
       />
 
-      <h2
-        class="text-xl font-semibold mt-6 mb-4 flex items-center justify-between"
-      >
+      <h2 class="text-xl font-semibold mt-6 mb-4 flex items-center justify-between">
         <span>Requests</span>
         <button
           onclick={openAddRequest}
-          class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded"
-          >+ New</button
+          class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded">+ New</button
         >
       </h2>
     </div>
@@ -454,6 +442,9 @@
             title={req.name}
           >
             {req.name}
+            {#if req.weight && req.weight > 0}
+              <span class="text-xs text-stone-400 ml-2">({req.weight})</span>
+            {/if}
           </button>
           <button
             class="p-1 hover:text-red-500 absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -530,9 +521,7 @@
                       onclick={() => {
                         db.history.delete(entry.id).then(() => {
                           // Удаляем запись локально, без повторного запроса к БД
-                          history = history.filter(
-                            (item) => item.id !== entry.id
-                          );
+                          history = history.filter((item) => item.id !== entry.id);
                         });
                       }}
                       class="p-1 hover:bg-stone-600 rounded"
@@ -591,9 +580,7 @@
           class="h-3 relative cursor-ns-resize flex items-center bg-stone-800"
           onmousedown={startDrag}
         >
-          <div
-            class="absolute inset-x-0 h-[1px] bg-stone-700 hover:bg-stone-600"
-          ></div>
+          <div class="absolute inset-x-0 h-[1px] bg-stone-700 hover:bg-stone-600"></div>
         </div>
 
         <!-- Response Viewer -->
@@ -634,9 +621,7 @@
       </div>
 
       <!-- Status Bar -->
-      <footer
-        class="h-8 bg-stone-800 flex items-center px-4 border-t border-stone-700"
-      >
+      <footer class="h-8 bg-stone-800 flex items-center px-4 border-t border-stone-700">
         {statusText}
       </footer>
     </div>
@@ -657,7 +642,7 @@
   />
 
   <!-- Env Config Dialog -->
-  <EnvConfigDialog open={showEnvConfig} onCancel={closeEnvConfig} />
+  <EnvConfigDialog open={showEnvConfig} />
 
   <!-- Confirm Dialog -->
   <ConfirmDialog

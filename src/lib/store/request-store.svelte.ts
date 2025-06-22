@@ -1,5 +1,5 @@
 import { db } from "$lib/db/repositories";
-import type { RequestItem } from "$lib/types";
+import type { RequestItem } from "$lib/db/schema";
 
 class RequestStore {
   requests = $state<RequestItem[]>([]);
@@ -10,30 +10,35 @@ class RequestStore {
   }
 
   setCurrentRequest(id: number | null) {
-    this.currentRequest = id ? this.requests.find((request) => request.id === id) || null : null;
+    this.currentRequest = id
+      ? this.requests.find((request) => request.id === id) || null
+      : null;
   }
 
   getRequest(id: number) {
     return this.requests.find((request) => request.id === id);
   }
-  
-  async loadRequests(collectionId: number, { currentRequestId = null }: { currentRequestId?: number | null } = {}) {
+
+  async loadRequests(
+    collectionId: number,
+    { currentRequestId = null }: { currentRequestId?: number | null } = {}
+  ) {
     this.requests = await db.requests.getByCollection(collectionId);
-    
+
     if (currentRequestId) {
       this.setCurrentRequest(currentRequestId);
     }
   }
 
-  async addRequest(request: Omit<RequestItem, 'id'>) {
+  async addRequest(request: Omit<RequestItem, "id">) {
     const newRequestId = await db.requests.add(
-      request.collection_id, 
-      request.name, 
-      request.url || "", 
-      request.cmd || "", 
+      request.collection_id,
+      request.name,
+      request.url || "",
+      request.cmd || "",
       request.body || ""
     );
-    
+
     this.requests.push({ ...request, id: newRequestId });
     this.setCurrentRequest(newRequestId);
   }

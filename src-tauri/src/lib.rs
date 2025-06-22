@@ -83,6 +83,24 @@ ALTER TABLE env_packs ADD COLUMN collection_id INTEGER REFERENCES collections(id
             .into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add_received_to_requests".into(),
+            sql: r#"
+ALTER TABLE requests ADD COLUMN received TEXT;
+"#
+            .into(),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 6,
+            description: "add_weight_to_requests".into(),
+            sql: r#"
+ALTER TABLE requests ADD COLUMN weight INTEGER;
+"#
+            .into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
