@@ -49,6 +49,11 @@
       onSendRequest();
     });
 
+    // Add cmd+p handler to open command menu (bypass Monaco's event capture)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => {
+      window.dispatchEvent(new CustomEvent("openCommandMenu"));
+    });
+
     // Set up two-way binding
     editor.onDidChangeModelContent(() => {
       const newValue = editor.getValue();

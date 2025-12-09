@@ -47,17 +47,23 @@ git tag "$TAG"
 git push origin "$TAG"
 
 echo "> Создаём релиз $TAG"
-curl -s --request POST \
+RELEASE_RESP=$(curl -s --request POST \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\":\"Release $TAG\",\"tag_name\":\"$TAG\",\"description\":\"Release $TAG\"}" \
-  "$API/projects/$PROJECT_ID/releases" > /dev/null
+  "$API/projects/$PROJECT_ID/releases")
+
+if echo "$RELEASE_RESP" | jq -e '.message' > /dev/null 2>&1; then
+  echo "ERROR: Failed to create release: $(echo "$RELEASE_RESP" | jq -r '.message')"
+  exit 1
+fi
+echo "  ✓ Релиз создан"
 
 
 if [[ -z "${SKIP_BUILD:-}" ]]; then
   echo "> Устанавливаем deps и собираем…"
   bun install               # или npm install/yarn
-  bunx tauri build  # --ci можно опустить
+  bunx tauri build --ci  # --ci отключает интерактивное поведение (включая автооткрытие DMG)
   echo "✔️  Сборка готова"
 else
   echo "> SKIP_BUILD задан — пропускаем стадию сборки."

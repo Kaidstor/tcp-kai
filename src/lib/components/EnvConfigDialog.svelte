@@ -21,7 +21,7 @@
     open: boolean;
   }
 
-  let { open }: Props = $props();
+  let { open = $bindable() }: Props = $props();
 
   let isEditingPackName = $state(false);
   let editedPackName = $state("");
@@ -46,10 +46,7 @@
 
   async function savePackName() {
     if (!envStore.currentEnvPack || !editedPackName.trim()) return;
-    await envStore.updateEnvPackName(
-      envStore.currentEnvPack.id,
-      editedPackName.trim()
-    );
+    await envStore.updateEnvPackName(envStore.currentEnvPack.id, editedPackName.trim());
     isEditingPackName = false;
   }
 
@@ -63,7 +60,7 @@
   async function handleDeleteVar(idx: number) {
     if (!envStore.currentEnvPack) return;
     envStore.currentEnvPack.vars = envStore.currentEnvPack.vars?.filter(
-      (_, i) => i !== idx
+      (_, i) => i !== idx,
     );
   }
 
@@ -71,7 +68,7 @@
     if (!envStore.currentEnvPack) return;
     await db.envPacks.updateVars(
       envStore.currentEnvPack.id,
-      envStore.currentEnvPack.vars ?? []
+      envStore.currentEnvPack.vars ?? [],
     );
   }
 
@@ -87,7 +84,7 @@
       // Update the collection's pack reference
       await db.collections.updatePack(
         appStore.currentCollection.id,
-        envStore.currentEnvPack.id
+        envStore.currentEnvPack.id,
       );
 
       await envStore.setCurrentEnvPack(envStore.currentEnvPack.id);
@@ -122,9 +119,7 @@
       class="fixed p-0 bg-stone-800 text-white rounded-lg w-[800px] h-[600px] max-w-[95vw] max-h-[90vh] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 shadow-xl overflow-hidden flex flex-col"
     >
       <div class="bg-stone-700 px-4 py-2 border-b border-stone-600">
-        <Dialog.Title
-          class="text-lg font-semibold flex items-center justify-between h-8"
-        >
+        <Dialog.Title class="text-lg font-semibold flex items-center justify-between h-8">
           <span>Переменные окружения</span>
           <div class="space-x-2">
             {#if hasChanges}
@@ -155,8 +150,7 @@
               >
                 <Check size="0.9em" />
                 <span
-                  >{appStore.currentCollection?.pack_id ===
-                  envStore.currentEnvPack?.id
+                  >{appStore.currentCollection?.pack_id === envStore.currentEnvPack?.id
                     ? "Применен"
                     : "Применить"}</span
                 >
@@ -186,9 +180,7 @@
                       {:else}
                         <Link size="0.9em" class="text-amber-400" />
                       {/if}
-                      <span class="truncate font-medium text-sm"
-                        >{pack.name}</span
-                      >
+                      <span class="truncate font-medium text-sm">{pack.name}</span>
                     </div>
                     {#if appStore.currentCollection?.pack_id === pack.id}
                       <span
@@ -241,7 +233,7 @@
                         (Global)
                       {:else}
                         (Linked to: {appStore.collections.find(
-                          (c) => c.id === envStore.currentEnvPack?.collection_id
+                          (c) => c.id === envStore.currentEnvPack?.collection_id,
                         )?.name})
                       {/if}
                     </span>

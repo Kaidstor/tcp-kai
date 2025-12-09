@@ -1,13 +1,6 @@
 <script lang="ts">
   import { Command, Dialog } from "bits-ui";
-  import {
-    Search,
-    Database,
-    Settings,
-    Plus,
-    Trash2,
-    ChevronLeft,
-  } from "lucide-svelte";
+  import { Search, Database, Settings, Plus, Trash2, ChevronLeft } from "lucide-svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import type { Collection } from "$lib/db/schema";
   import { onMount, onDestroy, tick } from "svelte";
@@ -19,8 +12,7 @@
     onDeleteCollection?: (id: number) => void;
   }
 
-  const { onAddCollection, onOpenEnvConfig, onDeleteCollection }: Props =
-    $props();
+  const { onAddCollection, onOpenEnvConfig, onDeleteCollection }: Props = $props();
 
   let dialogOpen = $state(false);
   let searchValue = $state("");
@@ -76,8 +68,7 @@
       // Если всё ещё нет, пробуем получить ID из текста
       if (!value) {
         // Ищем элемент коллекции по его тексту
-        const collectionItems =
-          commandWrapperEl.querySelectorAll(".command-item");
+        const collectionItems = commandWrapperEl.querySelectorAll(".command-item");
 
         // Находим именно выделенный элемент среди всех
         for (const item of collectionItems) {
@@ -87,7 +78,7 @@
 
             // Находим коллекцию по имени
             const collection = appStore.collections.find(
-              (c) => c.name === collectionName
+              (c) => c.name === collectionName,
             );
             if (collection) {
               value = `select-collection-${collection.id}`;
@@ -103,18 +94,27 @@
 
   // Обработка глобальной горячей клавиши для открытия меню
   function handleGlobalCmdK(e: KeyboardEvent) {
-    if (e.key === "k" && (e.metaKey || e.ctrlKey) && !dialogOpen) {
+    if (e.key === "p" && (e.metaKey || e.ctrlKey) && !dialogOpen) {
       e.preventDefault();
+      dialogOpen = true;
+    }
+  }
+
+  // Обработчик кастомного события от Monaco
+  function handleOpenCommandMenu() {
+    if (!dialogOpen) {
       dialogOpen = true;
     }
   }
 
   onMount(() => {
     window.addEventListener("keydown", handleGlobalCmdK);
+    window.addEventListener("openCommandMenu", handleOpenCommandMenu);
   });
 
   onDestroy(() => {
     window.removeEventListener("keydown", handleGlobalCmdK);
+    window.removeEventListener("openCommandMenu", handleOpenCommandMenu);
   });
 
   // Обработчик для клавиш внутри Command
@@ -123,7 +123,7 @@
 
     // Если мы в режиме коллекций
     if (currentMode === "collections") {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      if (e.key === "p" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
 
         // Даем время для обновления DOM перед проверкой выделенного элемента
@@ -134,12 +134,8 @@
         console.log("Selected value from DOM:", selectedValue);
 
         if (selectedValue && selectedValue.startsWith("select-collection-")) {
-          const collectionId = parseInt(
-            selectedValue.replace("select-collection-", "")
-          );
-          const collection = appStore.collections.find(
-            (c) => c.id === collectionId
-          );
+          const collectionId = parseInt(selectedValue.replace("select-collection-", ""));
+          const collection = appStore.collections.find((c) => c.id === collectionId);
 
           if (collection) {
             showCollectionActions(collection);
@@ -278,7 +274,7 @@
 
   function getSelectedCollectionName() {
     const selected = appStore.collections.find(
-      (c) => c.id === appStore.currentCollection?.id
+      (c) => c.id === appStore.currentCollection?.id,
     );
     return selected ? selected.name : "Выберите коллекцию";
   }
@@ -390,9 +386,7 @@
                           {action.name}
                         </span>
                       </div>
-                      <span class="text-xs text-stone-500"
-                        >{action.shortcut}</span
-                      >
+                      <span class="text-xs text-stone-500">{action.shortcut}</span>
                     </Command.Item>
                   {/each}
                   <Command.Item
@@ -407,8 +401,7 @@
                   {#each appStore.collections as collection}
                     <Command.Item
                       value={`select-collection-${collection.id}`}
-                      onSelect={() =>
-                        handleSelect(`select-collection-${collection.id}`)}
+                      onSelect={() => handleSelect(`select-collection-${collection.id}`)}
                       class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 group command-item"
                       keywords={[collection.name]}
                       data-collection-id={collection.id}
@@ -427,7 +420,7 @@
                       <kbd
                         class="hidden group-data-selected:flex items-center justify-center px-1.5 py-0.5 text-[10px] font-mono text-stone-400 bg-stone-700 rounded"
                       >
-                        ⌘K
+                        ⌘P
                       </kbd>
                     </Command.Item>
                   {/each}
@@ -435,9 +428,7 @@
               </Command.Group>
 
               <!-- Группа глобальных действий (видна в режиме collections) -->
-              <Command.Group
-                class={currentMode !== "collections" ? "hidden" : ""}
-              >
+              <Command.Group class={currentMode !== "collections" ? "hidden" : ""}>
                 <Command.GroupHeading
                   class="px-2 py-1.5 text-xs font-semibold text-stone-400"
                 >

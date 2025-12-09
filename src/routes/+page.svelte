@@ -648,7 +648,7 @@
   />
 
   <!-- Env Config Dialog -->
-  <EnvConfigDialog open={showEnvConfig} />
+  <EnvConfigDialog bind:open={showEnvConfig} />
 
   <!-- Confirm Dialog -->
   <ConfirmDialog

@@ -108,15 +108,20 @@ pub async fn send_tcp_request(
             }
         };
 
-        let command = format!(
-            "#{{\"pattern\":\"{}\",\"data\":{},\"id\":\"unique_id_12345\"}}",
-            pattern,
-            if !json.is_empty() {
-                json.clone()
-            } else {
-                "null".to_string()
-            }
-        );
+        // Parse the json data or use null if empty
+        let data: serde_json::Value = if !json.is_empty() {
+            serde_json::from_str(&json).unwrap_or(serde_json::Value::Null)
+        } else {
+            serde_json::Value::Null
+        };
+
+        // Build the payload using serde_json for proper UTF-8 handling
+        let payload = serde_json::json!({
+            "pattern": pattern,
+            "data": data,
+            "id": "unique_id_12345"
+        });
+        let command = format!("#{}", serde_json::to_string(&payload).unwrap());
         println!("Raw TCP command payload: {}", command);
 
         let length = command.len() - 1;
