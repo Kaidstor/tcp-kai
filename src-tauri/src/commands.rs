@@ -212,12 +212,7 @@ async fn read_message_length(stream: &mut TcpStream) -> Result<usize, String> {
 
 // Read full TCP response - length is in characters, not bytes (NestJS compatibility)
 async fn read_full_response(mut stream: TcpStream) -> Result<String, String> {
-    let read_timeout = Duration::from_secs(30);
-    
-    let char_count = match timeout(read_timeout, read_message_length(&mut stream)).await {
-        Ok(result) => result?,
-        Err(_) => return Err("Timeout waiting for response length".to_string()),
-    };
+    let char_count = read_message_length(&mut stream).await?;
     
     // Read characters one by one since length is in chars, not bytes
     // UTF-8 characters can be 1-4 bytes each
@@ -226,11 +221,7 @@ async fn read_full_response(mut stream: TcpStream) -> Result<String, String> {
     
     while chars_read < char_count {
         let mut byte = [0u8; 1];
-        match timeout(read_timeout, stream.read_exact(&mut byte)).await {
-            Ok(Ok(_)) => {},
-            Ok(Err(e)) => return Err(e.to_string()),
-            Err(_) => return Err("Timeout reading response body".to_string()),
-        };
+        stream.read_exact(&mut byte).await.map_err(|e| e.to_string())?;
         
         // Determine how many bytes this UTF-8 character needs
         let first_byte = byte[0];
@@ -249,11 +240,8 @@ async fn read_full_response(mut stream: TcpStream) -> Result<String, String> {
         let mut char_bytes = vec![first_byte];
         if char_len > 1 {
             let mut remaining = vec![0u8; char_len - 1];
-            match timeout(read_timeout, stream.read_exact(&mut remaining)).await {
-                Ok(Ok(_)) => char_bytes.extend(remaining),
-                Ok(Err(e)) => return Err(e.to_string()),
-                Err(_) => return Err("Timeout reading UTF-8 continuation bytes".to_string()),
-            };
+            stream.read_exact(&mut remaining).await.map_err(|e| e.to_string())?;
+            char_bytes.extend(remaining);
         }
         
         match std::str::from_utf8(&char_bytes) {
