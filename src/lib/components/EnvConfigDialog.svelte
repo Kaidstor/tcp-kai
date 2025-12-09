@@ -87,6 +87,17 @@
         envStore.currentEnvPack.id,
       );
 
+      // Update local state so the "Active" badge updates immediately
+      appStore.currentCollection.pack_id = envStore.currentEnvPack.id;
+
+      // Also update in collections array
+      const colIndex = appStore.collections.findIndex(
+        (c) => c.id === appStore.currentCollection?.id,
+      );
+      if (colIndex !== -1) {
+        appStore.collections[colIndex].pack_id = envStore.currentEnvPack.id;
+      }
+
       await envStore.setCurrentEnvPack(envStore.currentEnvPack.id);
       open = false;
 

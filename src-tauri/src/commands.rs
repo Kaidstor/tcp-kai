@@ -121,11 +121,12 @@ pub async fn send_tcp_request(
             "data": data,
             "id": "unique_id_12345"
         });
-        let command = format!("#{}", serde_json::to_string(&payload).unwrap());
-        println!("Raw TCP command payload: {}", command);
+        let json_str = serde_json::to_string(&payload).unwrap();
+        println!("Raw TCP command payload: #{}", json_str);
 
-        let length = command.len() - 1;
-        let serialized = format!("{}{}", length, command);
+        // NestJS uses string.length (character count), not byte length
+        let length = json_str.chars().count();
+        let serialized = format!("{}#{}", length, json_str);
         println!("send: {}", serialized);
 
         if let Err(e) = stream.write_all(serialized.as_bytes()).await {
@@ -209,21 +210,58 @@ async fn read_message_length(stream: &mut TcpStream) -> Result<usize, String> {
     len_str.parse::<usize>().map_err(|e| e.to_string())
 }
 
-// Read full TCP response until the unique ID marker
+// Read full TCP response - length is in characters, not bytes (NestJS compatibility)
 async fn read_full_response(mut stream: TcpStream) -> Result<String, String> {
-    let _ = read_message_length(&mut stream).await?;
-    let mut buffer = Vec::new();
-    let marker = b"unique_id_12345\"}";
-    loop {
-        let mut byte = [0; 1];
-        stream
-            .read_exact(&mut byte)
-            .await
-            .map_err(|e| e.to_string())?;
-        buffer.push(byte[0]);
-        if buffer.ends_with(marker) {
-            break;
+    let read_timeout = Duration::from_secs(30);
+    
+    let char_count = match timeout(read_timeout, read_message_length(&mut stream)).await {
+        Ok(result) => result?,
+        Err(_) => return Err("Timeout waiting for response length".to_string()),
+    };
+    
+    // Read characters one by one since length is in chars, not bytes
+    // UTF-8 characters can be 1-4 bytes each
+    let mut result = String::new();
+    let mut chars_read = 0;
+    
+    while chars_read < char_count {
+        let mut byte = [0u8; 1];
+        match timeout(read_timeout, stream.read_exact(&mut byte)).await {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => return Err(e.to_string()),
+            Err(_) => return Err("Timeout reading response body".to_string()),
+        };
+        
+        // Determine how many bytes this UTF-8 character needs
+        let first_byte = byte[0];
+        let char_len = if first_byte & 0x80 == 0 {
+            1 // ASCII
+        } else if first_byte & 0xE0 == 0xC0 {
+            2 // 2-byte UTF-8
+        } else if first_byte & 0xF0 == 0xE0 {
+            3 // 3-byte UTF-8
+        } else if first_byte & 0xF8 == 0xF0 {
+            4 // 4-byte UTF-8
+        } else {
+            return Err("Invalid UTF-8 start byte".to_string());
+        };
+        
+        let mut char_bytes = vec![first_byte];
+        if char_len > 1 {
+            let mut remaining = vec![0u8; char_len - 1];
+            match timeout(read_timeout, stream.read_exact(&mut remaining)).await {
+                Ok(Ok(_)) => char_bytes.extend(remaining),
+                Ok(Err(e)) => return Err(e.to_string()),
+                Err(_) => return Err("Timeout reading UTF-8 continuation bytes".to_string()),
+            };
         }
+        
+        match std::str::from_utf8(&char_bytes) {
+            Ok(s) => result.push_str(s),
+            Err(e) => return Err(format!("Invalid UTF-8 sequence: {}", e)),
+        }
+        chars_read += 1;
     }
-    String::from_utf8(buffer).map_err(|e| format!("Error converting bytes to string: {}", e))
+    
+    Ok(result)
 }
