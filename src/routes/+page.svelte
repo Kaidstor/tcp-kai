@@ -11,6 +11,7 @@
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import EnvVarInput from "$lib/components/EnvVarInput.svelte";
   import CommandMenu from "$lib/components/CommandMenu.svelte";
+  import EnvSwitcher from "$lib/components/EnvSwitcher.svelte";
   import type { RequestItem } from "$lib/db/schema";
   import { processEnvVars } from "$lib/utils";
   import { onMount } from "svelte";
@@ -423,6 +424,11 @@
         onAddCollection={openAdd}
         onOpenEnvConfig={openEnvConfig}
         onDeleteCollection={handleDeleteCollection}
+        onSelectRequest={(requestId) => {
+          const req = requestStore.getRequest(requestId);
+          if (req) selectRequest(req);
+        }}
+        onCreateRequest={confirmAddRequest}
       />
 
       <h2 class="text-xl font-semibold mt-6 mb-4 flex items-center justify-between">
@@ -545,13 +551,8 @@
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
-        <!-- Env button -->
-        <button
-          onclick={openEnvConfig}
-          class="bg-stone-600 hover:bg-stone-500 px-4 rounded text-xs whitespace-nowrap"
-        >
-          {envStore.currentEnvPack?.name ?? "no ENV"}
-        </button>
+        <!-- Env switcher -->
+        <EnvSwitcher onOpenSettings={openEnvConfig} />
       </div>
 
       <div class="flex flex-col flex-1 overflow-hidden editors-container">

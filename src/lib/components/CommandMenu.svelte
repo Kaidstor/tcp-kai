@@ -1,28 +1,46 @@
 <script lang="ts">
   import { Command, Dialog } from "bits-ui";
-  import { Search, Database, Settings, Plus, Trash2, ChevronLeft } from "lucide-svelte";
+  import {
+    Search,
+    Database,
+    Settings,
+    Plus,
+    Trash2,
+    ChevronLeft,
+    Terminal,
+  } from "lucide-svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import type { Collection } from "$lib/db/schema";
   import { onMount, onDestroy, tick } from "svelte";
   import { appStore } from "$lib/store/app-store.svelte";
+  import { requestStore } from "$lib/store/request-store.svelte";
 
   interface Props {
     onAddCollection: () => void;
     onOpenEnvConfig: () => void;
     onDeleteCollection?: (id: number) => void;
+    onSelectRequest?: (requestId: number) => void;
+    onCreateRequest?: (cmd: string) => void;
   }
 
-  const { onAddCollection, onOpenEnvConfig, onDeleteCollection }: Props = $props();
+  const {
+    onAddCollection,
+    onOpenEnvConfig,
+    onDeleteCollection,
+    onSelectRequest,
+    onCreateRequest,
+  }: Props = $props();
 
   let dialogOpen = $state(false);
   let searchValue = $state("");
+  let searchText = $state("");
   let confirmDeleteOpen = $state(false);
   let collectionToDelete = $state<number | null>(null);
   let highlightedItem = $state("");
   let commandWrapperEl: HTMLElement | null = null;
 
   // Режимы работы Command меню
-  type MenuMode = "collections" | "actions";
+  type MenuMode = "collections" | "actions" | "requests";
   let currentMode = $state<MenuMode>("collections");
 
   // Raycast-like actions
@@ -96,6 +114,12 @@
   function handleGlobalCmdK(e: KeyboardEvent) {
     if (e.key === "p" && (e.metaKey || e.ctrlKey) && !dialogOpen) {
       e.preventDefault();
+      currentMode = "collections";
+      dialogOpen = true;
+    }
+    if (e.key === "k" && (e.metaKey || e.ctrlKey) && !dialogOpen) {
+      e.preventDefault();
+      currentMode = "requests";
       dialogOpen = true;
     }
   }
@@ -245,6 +269,22 @@
         dialogOpen = false;
       }
     }
+    // Если мы в режиме запросов
+    else if (currentMode === "requests") {
+      if (value === "create-request") {
+        const cmd = searchText.trim();
+        if (cmd && onCreateRequest) {
+          onCreateRequest(cmd);
+          resetSearch();
+          dialogOpen = false;
+        }
+      } else if (value.startsWith("select-request-")) {
+        const requestId = parseInt(value.replace("select-request-", ""));
+        onSelectRequest?.(requestId);
+        resetSearch();
+        dialogOpen = false;
+      }
+    }
     // Если мы в режиме действий
     else if (currentMode === "actions") {
       if (value === "back") {
@@ -301,6 +341,7 @@
   function resetSearch() {
     currentMode = "collections";
     searchValue = "";
+    searchText = "";
     currentTarget = null;
   }
 
@@ -311,16 +352,19 @@
       highlightedItem = state.selectedValue;
       console.log("Highlighted item changed to:", highlightedItem);
     }
+    if (state && state.search !== undefined) {
+      searchText = state.search;
+    }
   }
 </script>
 
 <div>
   <button
     onclick={toggleDialog}
-    class="flex items-center gap-2 px-3 py-2 bg-stone-700 hover:bg-stone-600 rounded-md text-white transition-colors"
+    class="flex items-center gap-2 px-3 py-2 bg-stone-700 hover:bg-stone-600 rounded-md text-white transition-colors flex-1 w-full"
   >
     <Database class="w-4 h-4" />
-    <span class="truncate max-w-[150px]">{getSelectedCollectionName()}</span>
+    <span class="truncate">{getSelectedCollectionName()}</span>
   </button>
 
   <Dialog.Root bind:open={dialogOpen}>
@@ -349,7 +393,9 @@
               <Command.Input
                 placeholder={currentMode === "collections"
                   ? "Поиск коллекций..."
-                  : "Поиск действий..."}
+                  : currentMode === "requests"
+                    ? "Поиск запросов (cmd)..."
+                    : "Поиск действий..."}
                 class="h-10 py-2 w-full bg-stone-800 text-white focus:outline-none"
               />
             </div>
@@ -358,11 +404,13 @@
               <Command.Empty class="py-6 text-center text-sm text-stone-400">
                 {currentMode === "collections"
                   ? "Коллекции не найдены"
-                  : "Нет доступных действий"}
+                  : currentMode === "actions"
+                    ? "Нет доступных действий"
+                    : ""}
               </Command.Empty>
 
               <!-- Группа коллекций (видна в режиме collections) -->
-              <Command.Group>
+              <Command.Group class={currentMode === "requests" ? "hidden" : ""}>
                 <Command.GroupHeading
                   class="px-2 py-1.5 text-xs font-semibold text-stone-400"
                 >
@@ -424,6 +472,47 @@
                       </kbd>
                     </Command.Item>
                   {/each}
+                {/if}
+              </Command.Group>
+
+              <!-- Группа запросов (видна в режиме requests) -->
+              <Command.Group
+                class={currentMode !== "requests" ? "hidden" : ""}
+                forceMount
+              >
+                <Command.GroupHeading
+                  class="px-2 py-1.5 text-xs font-semibold text-stone-400"
+                >
+                  Запросы
+                </Command.GroupHeading>
+                {#each requestStore.requests as req}
+                  <Command.Item
+                    value={`select-request-${req.id}`}
+                    onSelect={() => handleSelect(`select-request-${req.id}`)}
+                    class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                    keywords={[req.name, req.cmd || ""]}
+                  >
+                    <Terminal class="w-4 h-4 text-stone-400" />
+                    <span class="flex-1 truncate">{req.name}</span>
+                    {#if req.id === requestStore.currentRequest?.id}
+                      <span
+                        class="px-1.5 py-0.5 text-xs rounded bg-stone-700 text-stone-300"
+                      >
+                        Текущий
+                      </span>
+                    {/if}
+                  </Command.Item>
+                {/each}
+                {#if searchText.trim() && onCreateRequest}
+                  <Command.Item
+                    value="create-request"
+                    onSelect={() => handleSelect("create-request")}
+                    class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                    forceMount
+                  >
+                    <Plus class="w-4 h-4 text-stone-400" />
+                    <span>Создать команду <strong>"{searchText.trim()}"</strong></span>
+                  </Command.Item>
                 {/if}
               </Command.Group>
 

@@ -77,11 +77,11 @@
   <div class="flex items-center justify-between px-2">
     {#if $updateStatus.checking}
       <button class="text-stone-400 animate-spin" disabled>
-        <RefreshCw size="1rem" />
+        <RefreshCw size="0.75rem" />
       </button>
     {:else if $updateStatus.downloading}
       <div class="text-green-400 flex items-center gap-1">
-        <ArrowDownCircle size="1rem" class="animate-pulse" />
+        <ArrowDownCircle size="0.75rem" class="animate-pulse" />
         <span>Скачивание...</span>
       </div>
     {:else if $updateStatus.available}
@@ -90,7 +90,7 @@
         onclick={handleInstallUpdate}
         title="Установить обновление v{$updateStatus.version}"
       >
-        <ArrowDownCircle size="1rem" />
+        <ArrowDownCircle size="0.75rem" />
         <span>Обновить</span>
       </button>
     {:else}
@@ -99,7 +99,7 @@
         onclick={handleCheckForUpdates}
         title="Проверить наличие обновлений"
       >
-        <RefreshCw size="1rem" />
+        <RefreshCw size="0.75rem" />
       </button>
     {/if}
 
