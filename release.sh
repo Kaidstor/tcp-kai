@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+# Загрузка переменных из .env файла
+if [ -f .env ]; then
+  set -a  # автоматически экспортировать все переменные
+  source .env
+  set +a
+fi
+
 # Включить отладочный вывод: DEBUG=1 ./release.sh …
 DEBUG=${DEBUG:-0}
 if [[ "$DEBUG" == "1" ]]; then

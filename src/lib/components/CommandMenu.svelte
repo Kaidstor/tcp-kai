@@ -1,14 +1,6 @@
 <script lang="ts">
   import { Command, Dialog } from "bits-ui";
-  import {
-    Search,
-    Database,
-    Settings,
-    Plus,
-    Trash2,
-    ChevronLeft,
-    Terminal,
-  } from "lucide-svelte";
+  import { Search, Database, Settings, Plus, Trash2, ChevronLeft } from "lucide-svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import type { Collection } from "$lib/db/schema";
   import { onMount, onDestroy, tick } from "svelte";
@@ -409,130 +401,138 @@
                     : ""}
               </Command.Empty>
 
-              <!-- Группа коллекций (видна в режиме collections) -->
-              <Command.Group class={currentMode === "requests" ? "hidden" : ""}>
-                <Command.GroupHeading
-                  class="px-2 py-1.5 text-xs font-semibold text-stone-400"
-                >
-                  {currentMode === "collections" ? "Коллекции" : "Действия"}
-                </Command.GroupHeading>
-                {#if currentTarget}
-                  {#each getCollectionActions(currentTarget) as action}
-                    {@const Component = action.icon}
-
-                    <Command.Item
-                      value={action.id}
-                      onSelect={() => handleSelect(action.id)}
-                      class="flex w-full items-center justify-between px-2 py-1.5 text-sm rounded hover:bg-stone-700 data-selected:bg-stone-700 command-item"
-                      data-action-id={action.id}
-                    >
-                      <div class="flex items-center gap-2">
-                        <Component
-                          class={`w-4 h-4 ${action.danger ? "text-red-400" : "text-stone-400"}`}
-                        />
-                        <span class={action.danger ? "text-red-400" : ""}>
-                          {action.name}
-                        </span>
-                      </div>
-                      <span class="text-xs text-stone-500">{action.shortcut}</span>
-                    </Command.Item>
-                  {/each}
-                  <Command.Item
-                    value="back"
-                    onSelect={() => resetSearch()}
-                    class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+              <!-- Группа коллекций (видна в режиме collections и actions) -->
+              {#if currentMode !== "requests"}
+                <Command.Group>
+                  <Command.GroupHeading
+                    class="px-2 py-1.5 text-xs font-semibold text-stone-400"
                   >
-                    <ChevronLeft class="w-4 h-4 text-stone-400" />
-                    Назад
-                  </Command.Item>
-                {:else}
-                  {#each appStore.collections as collection}
-                    <Command.Item
-                      value={`select-collection-${collection.id}`}
-                      onSelect={() => handleSelect(`select-collection-${collection.id}`)}
-                      class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 group command-item"
-                      keywords={[collection.name]}
-                      data-collection-id={collection.id}
-                    >
-                      <Database class="w-4 h-4 text-stone-400" />
-                      <span class="flex-1 truncate">{collection.name}</span>
+                    {currentMode === "collections" ? "Коллекции" : "Действия"}
+                  </Command.GroupHeading>
+                  {#if currentTarget}
+                    {#each getCollectionActions(currentTarget) as action}
+                      {@const Component = action.icon}
 
-                      {#if collection.id === appStore.currentCollection?.id}
-                        <span
-                          class="px-1.5 py-0.5 text-xs rounded bg-stone-700 text-stone-300"
-                        >
-                          Текущая
-                        </span>
-                      {/if}
-
-                      <kbd
-                        class="hidden group-data-selected:flex items-center justify-center px-1.5 py-0.5 text-[10px] font-mono text-stone-400 bg-stone-700 rounded"
+                      <Command.Item
+                        value={action.id}
+                        onSelect={() => handleSelect(action.id)}
+                        class="flex w-full items-center justify-between px-2 py-1.5 text-sm rounded hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                        data-action-id={action.id}
                       >
-                        ⌘P
-                      </kbd>
+                        <div class="flex items-center gap-2">
+                          <Component
+                            class={`w-4 h-4 ${action.danger ? "text-red-400" : "text-stone-400"}`}
+                          />
+                          <span class={action.danger ? "text-red-400" : ""}>
+                            {action.name}
+                          </span>
+                        </div>
+                        <span class="text-xs text-stone-500">{action.shortcut}</span>
+                      </Command.Item>
+                    {/each}
+                    <Command.Item
+                      value="back"
+                      onSelect={() => resetSearch()}
+                      class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                    >
+                      <ChevronLeft class="w-4 h-4 text-stone-400" />
+                      Назад
                     </Command.Item>
-                  {/each}
-                {/if}
-              </Command.Group>
+                  {:else}
+                    {#each appStore.collections as collection}
+                      <Command.Item
+                        value={`select-collection-${collection.id}`}
+                        onSelect={() =>
+                          handleSelect(`select-collection-${collection.id}`)}
+                        class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 group command-item"
+                        keywords={[collection.name]}
+                        data-collection-id={collection.id}
+                      >
+                        <Database class="w-4 h-4 text-stone-400" />
+                        <span class="flex-1 truncate">{collection.name}</span>
+
+                        {#if collection.id === appStore.currentCollection?.id}
+                          <span
+                            class="px-1.5 py-0.5 text-xs rounded bg-stone-700 text-stone-300"
+                          >
+                            Текущая
+                          </span>
+                        {/if}
+
+                        <kbd
+                          class="hidden group-data-selected:flex items-center justify-center px-1.5 py-0.5 text-[10px] font-mono text-stone-400 bg-stone-700 rounded"
+                        >
+                          ⌘P
+                        </kbd>
+                      </Command.Item>
+                    {/each}
+                  {/if}
+                </Command.Group>
+              {/if}
 
               <!-- Группа запросов (видна в режиме requests) -->
-              <Command.Group
-                class={currentMode !== "requests" ? "hidden" : ""}
-                forceMount
-              >
-                <Command.GroupHeading
-                  class="px-2 py-1.5 text-xs font-semibold text-stone-400"
-                >
-                  Запросы
-                </Command.GroupHeading>
-                {#each requestStore.requests as req}
-                  <Command.Item
-                    value={`select-request-${req.id}`}
-                    onSelect={() => handleSelect(`select-request-${req.id}`)}
-                    class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
-                    keywords={[req.name, req.cmd || ""]}
+              {#if currentMode === "requests"}
+                <Command.Group>
+                  <Command.GroupHeading
+                    class="px-2 py-1.5 text-xs font-semibold text-stone-400"
                   >
-                    <Terminal class="w-4 h-4 text-stone-400" />
-                    <span class="flex-1 truncate">{req.name}</span>
-                    {#if req.id === requestStore.currentRequest?.id}
-                      <span
-                        class="px-1.5 py-0.5 text-xs rounded bg-stone-700 text-stone-300"
-                      >
-                        Текущий
-                      </span>
-                    {/if}
-                  </Command.Item>
-                {/each}
-                {#if searchText.trim() && onCreateRequest}
-                  <Command.Item
-                    value="create-request"
-                    onSelect={() => handleSelect("create-request")}
-                    class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
-                    forceMount
-                  >
-                    <Plus class="w-4 h-4 text-stone-400" />
-                    <span>Создать команду <strong>"{searchText.trim()}"</strong></span>
-                  </Command.Item>
-                {/if}
-              </Command.Group>
+                    Запросы
+                  </Command.GroupHeading>
+                  {#each requestStore.requests as req}
+                    <Command.Item
+                      value={`select-request-${req.id}`}
+                      onSelect={() => handleSelect(`select-request-${req.id}`)}
+                      class="flex items-center justify-between px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                      keywords={[req.name]}
+                    >
+                      <div class="flex flex-col flex-1 min-w-0">
+                        <span class="truncate">{req.name}</span>
+                        {#if req.cmd && req.cmd !== req.name}
+                          <span class="text-xs text-stone-500 truncate">{req.cmd}</span>
+                        {/if}
+                      </div>
+                      {#if req.id === requestStore.currentRequest?.id}
+                        <span
+                          class="px-1.5 py-0.5 text-xs rounded bg-stone-700 text-stone-300 ml-2 shrink-0"
+                        >
+                          Текущий
+                        </span>
+                      {/if}
+                    </Command.Item>
+                  {/each}
+                  {#if searchText.trim() && onCreateRequest}
+                    <Command.Item
+                      value="create-request"
+                      onSelect={() => handleSelect("create-request")}
+                      class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                      forceMount
+                    >
+                      <Plus class="w-4 h-4 text-stone-400" />
+                      <span>Создать команду <strong>"{searchText.trim()}"</strong></span>
+                    </Command.Item>
+                  {/if}
+                </Command.Group>
+              {/if}
 
               <!-- Группа глобальных действий (видна в режиме collections) -->
-              <Command.Group class={currentMode !== "collections" ? "hidden" : ""}>
-                <Command.GroupHeading
-                  class="px-2 py-1.5 text-xs font-semibold text-stone-400"
-                >
-                  Действия
-                </Command.GroupHeading>
-                <Command.Item
-                  value="add-collection"
-                  onSelect={() => handleSelect("add-collection")}
-                  class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
-                  data-action="add-collection"
-                >
-                  <Plus class="w-4 h-4 text-stone-400" />
-                  <span>Добавить коллекцию</span>
-                </Command.Item>
-              </Command.Group>
+              {#if currentMode === "collections"}
+                <Command.Group>
+                  <Command.GroupHeading
+                    class="px-2 py-1.5 text-xs font-semibold text-stone-400"
+                  >
+                    Действия
+                  </Command.GroupHeading>
+                  <Command.Item
+                    value="add-collection"
+                    onSelect={() => handleSelect("add-collection")}
+                    class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                    data-action="add-collection"
+                  >
+                    <Plus class="w-4 h-4 text-stone-400" />
+                    <span>Добавить коллекцию</span>
+                  </Command.Item>
+                </Command.Group>
+              {/if}
 
               <!-- Группа действий с коллекцией (видна в режиме actions) -->
             </Command.List>
@@ -559,10 +559,5 @@
   .command-wrapper {
     position: relative;
     z-index: 60;
-  }
-
-  /* Скрываем неактивные группы */
-  .hidden {
-    display: none;
   }
 </style>
