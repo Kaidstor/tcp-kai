@@ -61,12 +61,12 @@
 {#if hasMultiplePacks}
   <DropdownMenu.Root bind:open>
     <DropdownMenu.Trigger
-      class="bg-stone-600 hover:bg-stone-500 px-3 rounded text-xs whitespace-nowrap flex items-center gap-1.5 transition-colors"
+      class="bg-stone-700 text-stone-200 hover:bg-stone-500 px-2 py-1 rounded-xl text-xs whitespace-nowrap flex items-center gap-1 transition-colors outline-none"
     >
       <span class="truncate max-w-[120px]">
         {envStore.currentEnvPack?.name ?? "no ENV"}
       </span>
-      <ChevronDown class="w-3 h-3 shrink-0" />
+      <ChevronDown class="size-2.5 shrink-0" />
     </DropdownMenu.Trigger>
     <DropdownMenu.Portal>
       <DropdownMenu.Content
@@ -100,7 +100,7 @@
 {:else}
   <button
     onclick={onOpenSettings}
-    class="bg-stone-600 hover:bg-stone-500 px-4 rounded text-xs whitespace-nowrap transition-colors"
+    class="bg-stone-600 hover:bg-stone-500 px-4 rounded text-xs whitespace-nowrap transition-colors outline-none"
   >
     {envStore.currentEnvPack?.name ?? "no ENV"}
   </button>

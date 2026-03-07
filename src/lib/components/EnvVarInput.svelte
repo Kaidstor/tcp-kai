@@ -6,12 +6,7 @@
     className: string;
   }
 
-  let {
-    value = $bindable(),
-    placeholder,
-    envVars,
-    className,
-  }: Props = $props();
+  let { value = $bindable(), placeholder, envVars, className }: Props = $props();
 
   let inputElement: HTMLInputElement | null = $state(null);
   let showSuggestions = $state(false);
@@ -19,8 +14,7 @@
   let cursorPosition = $derived(() => inputElement?.selectionStart || 0);
 
   let filteredSuggestions: string[] = $state([]);
-  let activeVarMatch: { start: number; end: number; key: string } | null =
-    $state(null);
+  let activeVarMatch: { start: number; end: number; key: string } | null = $state(null);
   let selectedSuggestionIndex: number = $state(0);
 
   let processedValue = $derived(highlightEnvVars(value, envVars));
@@ -33,10 +27,7 @@
   });
 
   // Function to highlight env vars in the input
-  function highlightEnvVars(
-    text: string,
-    vars: { key: string; value: string }[]
-  ) {
+  function highlightEnvVars(text: string, vars: { key: string; value: string }[]) {
     const keys = vars.map((v) => v.key);
     let result = [];
     let lastIndex = 0;
@@ -138,7 +129,7 @@
       // We're in a variable context, show suggestions
       const varKeys = envVars.map((v) => v.key);
       filteredSuggestions = varKeys.filter((key) =>
-        key.toLowerCase().includes(partialVar.toLowerCase())
+        key.toLowerCase().includes(partialVar.toLowerCase()),
       );
 
       activeVarMatch = {
@@ -159,9 +150,7 @@
 
     const beforeVar = value.substring(0, activeVarMatch.start);
     const afterVar =
-      activeVarMatch.end >= value.length
-        ? ""
-        : value.substring(activeVarMatch.end);
+      activeVarMatch.end >= value.length ? "" : value.substring(activeVarMatch.end);
 
     value = `${beforeVar}{{${suggestion}}}${afterVar}`;
     showSuggestions = false;
@@ -180,7 +169,7 @@
       if (e.key === "ArrowDown") {
         selectedSuggestionIndex = Math.min(
           selectedSuggestionIndex + 1,
-          filteredSuggestions.length - 1
+          filteredSuggestions.length - 1,
         );
         e.preventDefault();
       } else if (e.key === "ArrowUp") {
@@ -207,7 +196,7 @@
     onfocus={handleFocus}
     onblur={handleBlur}
     onkeydown={handleKeydown}
-    class="bg-stone-700 p-2 rounded w-full {className} text-transparent caret-white selection:bg-stone-600"
+    class="bg-stone-700 p-2 w-full {className} text-transparent caret-white selection:bg-stone-600"
   />
 
   <!-- Visual overlay for highlighting -->
@@ -231,7 +220,7 @@
 
   {#if showSuggestions && activeVarMatch}
     <div
-      class="absolute left-0 mt-1 w-full max-h-40 overflow-y-auto bg-stone-700 rounded shadow-lg z-10"
+      class="absolute left-0 mt-1 w-full max-h-40 overflow-y-auto bg-stone-700 shadow-lg z-10"
     >
       {#each filteredSuggestions as suggestion, i}
         <button

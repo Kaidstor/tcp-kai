@@ -353,9 +353,8 @@
 <div>
   <button
     onclick={toggleDialog}
-    class="flex items-center gap-2 px-3 py-2 bg-stone-700 hover:bg-stone-600 rounded-md text-white transition-colors flex-1 w-full"
+    class="flex items-center gap-1.5 px-2 py-1 hover:bg-stone-600 rounded text-xs text-stone-300 transition-colors outline-none"
   >
-    <Database class="w-4 h-4" />
     <span class="truncate">{getSelectedCollectionName()}</span>
   </button>
 

@@ -1,7 +1,14 @@
 <script lang="ts">
   import { db } from "$lib/db/repositories";
   import { invoke } from "@tauri-apps/api/core";
-  import { Trash2, History, FileJson, FileOutput } from "lucide-svelte";
+  import {
+    Trash2,
+    History,
+    FileJson,
+    FileOutput,
+    SendHorizontal,
+    Square,
+  } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
   import ScrollArea from "$lib/components/ScrollArea.svelte";
   import StoneMonacoEditor from "$lib/components/StoneMonacoEditor.svelte";
@@ -414,12 +421,13 @@
   }
 </script>
 
-<main class="flex h-screen bg-stone-900 text-white">
-  <!-- Sidebar -->
-  <aside
-    class="w-64 bg-stone-800 border-r border-stone-700 flex flex-col h-full relative"
+<main class="flex flex-col h-screen bg-stone-900 text-white">
+  <!-- Custom Titlebar -->
+  <div
+    data-tauri-drag-region
+    class="bg-stone-800 border-b border-stone-700 flex items-stretch justify-between shrink-0"
   >
-    <div class="p-2">
+    <div class="flex items-center pl-20 gap-2 h-8">
       <CommandMenu
         onAddCollection={openAdd}
         onOpenEnvConfig={openEnvConfig}
@@ -430,209 +438,228 @@
         }}
         onCreateRequest={confirmAddRequest}
       />
-
-      <h2 class="text-xl font-semibold mt-6 mb-4 flex items-center justify-between">
-        <span>Requests</span>
-        <button
-          onclick={openAddRequest}
-          class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded">+</button
-        >
-      </h2>
     </div>
-
-    <div class="px-2">
-      <input
-        placeholder="Search requests..."
-        bind:value={reqSearch}
-        class="w-full py-1 px-2 bg-stone-700 rounded h-10"
-      />
-    </div>
-    <ScrollArea class="flex-1 overflow-y-auto pb-2">
-      {#each filteredRequests as req}
-        <div
-          class="group relative w-full flex items-center hover:bg-stone-600 rounded"
-          class:bg-stone-700={req.id === requestStore.currentRequest?.id}
-        >
-          <button
-            class="w-full text-left cursor-pointer p-2 pr-8 flex-grow truncate"
-            onclick={() => selectRequest(req)}
-            title={req.name}
-          >
-            {req.name}
-            {#if req.weight && req.weight > 0}
-              <span class="text-xs text-stone-400 ml-2">({req.weight})</span>
-            {/if}
-          </button>
-          <button
-            class="p-1 hover:text-red-500 absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-            onclick={(e) => handleDeleteRequest(e, req.id)}
-            title="Удалить запрос"
-          >
-            <Trash2 size="0.9rem" />
-          </button>
+    <div class="flex items-center gap-3 pr-2">
+      <!-- Env vars -->
+      {#if envStore.currentEnvPack?.vars?.length}
+        <div class="flex gap-1 items-center text-[11px] text-stone-500">
+          {#each envStore.currentEnvPack.vars as v}
+            <span class="p-0.5 rounded truncate max-w-[120px]" title="{v.key}={v.value}">
+              {v.key}=<span class="text-stone-400">{v.value}</span>
+            </span>
+          {/each}
         </div>
-      {/each}
-    </ScrollArea>
-
-    <!-- Add UpdaterButton at the bottom of the sidebar -->
-    <UpdaterButton />
-  </aside>
-
-  {#if requestStore.currentRequest}
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col overflow-hidden">
-      <!-- Request Builder -->
-      <div
-        class={`p-2 bg-stone-800 border-b border-stone-700 grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2`}
-      >
-        <div class="flex flex-col gap-1">
-          <EnvVarInput
-            bind:value={url!}
-            placeholder="Host:Port"
-            envVars={envStore.currentEnvPack?.vars ?? []}
-            className="rounded w-full"
-          />
-        </div>
-        <input
-          bind:value={cmd}
-          placeholder="CMD"
-          class="bg-stone-700 px-2 py-1 rounded"
-        />
-        <button
-          onclick={() => (isSending ? stopQuery() : sendQuery())}
-          class="bg-stone-600 hover:bg-stone-500 px-2 py-1 rounded"
-        >
-          {isSending ? "Stop" : "Send"}
-        </button>
-        <!-- History Dropdown -->
+      {/if}
+      <!-- History -->
+      {#if history.length > 0}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger
-            disabled={history.length === 0}
-            class="bg-stone-600 hover:bg-stone-500 px-2 py-1 rounded"
+            class="text-stone-400 hover:text-stone-200 transition-colors"
           >
-            <History size="1.25rem" />
+            <History size="1rem" />
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
-              class="bg-stone-800 text-white border border-stone-700 rounded p-2 max-h-64 overflow-y-auto mt-2 min-w-full"
+              class="bg-stone-800 text-white border border-stone-700 rounded p-2 max-h-64 overflow-y-auto mt-2 min-w-[200px] z-50"
             >
               {#each history as entry}
                 <div
                   class="flex justify-between items-center p-2 hover:bg-stone-700 rounded text-sm whitespace-nowrap"
                 >
-                  <div class="flex-1">
-                    <button
-                      class="text-sm truncate cursor-pointer hover:text-primary-300 bg-transparent border-none p-0"
-                      onclick={() => loadHistoryItem(entry.id)}
-                    >
-                      {entry.timestamp}
-                      {#if entry.execution_time}
-                        <span class="mx-2 text-xs text-stone-200">
-                          {(entry.execution_time / 1000).toFixed(2)}s
-                        </span>
-                      {/if}
-                    </button>
-                  </div>
-                  <div class="flex items-center space-x-2">
-                    <button
-                      onclick={() => {
-                        db.history.delete(entry.id).then(() => {
-                          // Удаляем запись локально, без повторного запроса к БД
-                          history = history.filter((item) => item.id !== entry.id);
-                        });
-                      }}
-                      class="p-1 hover:bg-stone-600 rounded"
-                    >
-                      <Trash2 size="1rem" />
-                    </button>
-                  </div>
+                  <button
+                    class="text-sm truncate cursor-pointer hover:text-primary-300 bg-transparent border-none p-0 flex-1 text-left"
+                    onclick={() => loadHistoryItem(entry.id)}
+                  >
+                    {entry.timestamp}
+                    {#if entry.execution_time}
+                      <span class="mx-2 text-xs text-stone-200">
+                        {(entry.execution_time / 1000).toFixed(2)}s
+                      </span>
+                    {/if}
+                  </button>
+                  <button
+                    onclick={() => {
+                      db.history.delete(entry.id).then(() => {
+                        history = history.filter((item) => item.id !== entry.id);
+                      });
+                    }}
+                    class="p-1 hover:bg-stone-600 rounded ml-2"
+                  >
+                    <Trash2 size="0.8rem" />
+                  </button>
                 </div>
               {/each}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
-        <!-- Env switcher -->
-        <EnvSwitcher onOpenSettings={openEnvConfig} />
-      </div>
-
-      <div class="flex flex-col flex-1 overflow-hidden editors-container">
-        <!-- Body Editor -->
-        <div
-          class="overflow-hidden flex flex-col relative"
-          style="height: {requestPanelHeight};"
-        >
-          <StoneMonacoEditor
-            bind:this={requestEditor}
-            bind:isFocused={isRequestEditorFocused}
-            bind:value={sendData!}
-            height="100%"
-            options={{
-              language: "json",
-            }}
-            onSendRequest={() => {
-              if (!isSending && requestStore.currentRequest) {
-                sendQuery();
-              }
-            }}
-          />
-          {#if !sendData && !isRequestEditorFocused}
-            <div
-              class="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 pointer-events-none"
-            >
-              <FileJson size="3rem" class="mb-2 text-stone-500" />
-              <p class="text-stone-500">Request Body</p>
-            </div>
-          {/if}
-        </div>
-
-        <!-- Resizable handle -->
-        <div
-          role="button"
-          tabindex="0"
-          class="h-3 relative cursor-ns-resize flex items-center bg-stone-800"
-          onmousedown={startDrag}
-        >
-          <div class="absolute inset-x-0 h-[1px] bg-stone-700 hover:bg-stone-600"></div>
-        </div>
-
-        <!-- Response Viewer -->
-        <div
-          class="flex-1 overflow-hidden flex flex-col relative @container/response"
-          style="height: calc(100% - {requestPanelHeight} - 4px);"
-        >
-          <StoneMonacoEditor
-            bind:this={responseEditor}
-            bind:value={receivedData}
-            bind:isFocused={isResponseEditorFocused}
-            height="100%"
-            isPulse={statusText === "Sending..."}
-            options={{
-              readOnly: true,
-              language: "json",
-            }}
-            onSendRequest={() => {
-              if (!isSending && requestStore.currentRequest) {
-                sendQuery();
-              }
-            }}
-          />
-          {#if !receivedData}
-            <div
-              class="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 pointer-events-none"
-            >
-              <FileOutput size="3rem" class="mb-2 text-stone-500" />
-              <p class="text-stone-500">Response</p>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Status Bar -->
-      <footer class="h-8 bg-stone-800 flex items-center px-4 border-t border-stone-700">
-        {statusText}
-      </footer>
+      {/if}
+      <!-- Env switcher -->
+      <EnvSwitcher onOpenSettings={openEnvConfig} />
     </div>
-  {/if}
+  </div>
+
+  <div class="flex flex-1 overflow-hidden">
+    <!-- Sidebar -->
+    <aside
+      class="w-64 bg-stone-800 border-r border-stone-700 flex flex-col h-full relative"
+    >
+      <div class="p-2">
+        <h2 class="text-xl font-semibold mb-4 flex items-center justify-between">
+          <span>Requests</span>
+          <button
+            onclick={openAddRequest}
+            class="bg-stone-600 hover:bg-stone-500 text-sm px-3 py-1 rounded">+</button
+          >
+        </h2>
+      </div>
+
+      <div class="px-2">
+        <input
+          placeholder="Search requests..."
+          bind:value={reqSearch}
+          class="w-full py-1 px-2 bg-stone-700 rounded h-10"
+        />
+      </div>
+      <ScrollArea class="flex-1 overflow-y-auto pb-2">
+        {#each filteredRequests as req}
+          <div
+            class="group relative w-full flex items-center hover:bg-stone-600 rounded"
+            class:bg-stone-700={req.id === requestStore.currentRequest?.id}
+          >
+            <button
+              class="w-full text-left cursor-pointer p-2 pr-8 flex-grow truncate"
+              onclick={() => selectRequest(req)}
+              title={req.name}
+            >
+              {req.name}
+              {#if req.weight && req.weight > 0}
+                <span class="text-xs text-stone-400 ml-2">({req.weight})</span>
+              {/if}
+            </button>
+            <button
+              class="p-1 hover:text-red-500 absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              onclick={(e) => handleDeleteRequest(e, req.id)}
+              title="Удалить запрос"
+            >
+              <Trash2 size="0.9rem" />
+            </button>
+          </div>
+        {/each}
+      </ScrollArea>
+
+      <!-- Add UpdaterButton at the bottom of the sidebar -->
+      <UpdaterButton />
+    </aside>
+
+    {#if requestStore.currentRequest}
+      <!-- Main Content -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Request Builder -->
+        <div
+          class={`p-2 bg-stone-800 border-b border-stone-700 grid grid-cols-[1fr_1fr_auto] gap-2`}
+        >
+          <div class="flex flex-col gap-1">
+            <EnvVarInput
+              bind:value={url!}
+              placeholder="Host:Port"
+              envVars={envStore.currentEnvPack?.vars ?? []}
+              className="w-full"
+            />
+          </div>
+          <input bind:value={cmd} placeholder="CMD" class="bg-stone-700 px-2 py-1" />
+          <button
+            onclick={() => (isSending ? stopQuery() : sendQuery())}
+            class="bg-stone-700 hover:bg-stone-500 px-2 py-1"
+          >
+            {#if isSending}
+              <Square size="1rem" color="var(--color-red-500)" />
+            {:else}
+              <SendHorizontal size="1rem" />
+            {/if}
+          </button>
+        </div>
+
+        <div class="flex flex-col flex-1 overflow-hidden editors-container">
+          <!-- Body Editor -->
+          <div
+            class="overflow-hidden flex flex-col relative"
+            style="height: {requestPanelHeight};"
+          >
+            <StoneMonacoEditor
+              bind:this={requestEditor}
+              bind:isFocused={isRequestEditorFocused}
+              bind:value={sendData!}
+              height="100%"
+              options={{
+                language: "json",
+              }}
+              onSendRequest={() => {
+                if (!isSending && requestStore.currentRequest) {
+                  sendQuery();
+                }
+              }}
+            />
+            {#if !sendData && !isRequestEditorFocused}
+              <div
+                class="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 pointer-events-none"
+              >
+                <FileJson size="3rem" class="mb-2 text-stone-500" />
+                <p class="text-stone-500">Request Body</p>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Resizable handle -->
+          <div
+            role="button"
+            tabindex="0"
+            class="h-3 relative cursor-ns-resize flex items-center bg-stone-800"
+            onmousedown={startDrag}
+          >
+            <div class="absolute inset-x-0 h-[1px] bg-stone-700 hover:bg-stone-600"></div>
+          </div>
+
+          <!-- Response Viewer -->
+          <div
+            class="flex-1 overflow-hidden flex flex-col relative @container/response"
+            style="height: calc(100% - {requestPanelHeight} - 4px);"
+          >
+            <StoneMonacoEditor
+              bind:this={responseEditor}
+              bind:value={receivedData}
+              bind:isFocused={isResponseEditorFocused}
+              height="100%"
+              isPulse={statusText === "Sending..."}
+              options={{
+                readOnly: true,
+                language: "json",
+              }}
+              onSendRequest={() => {
+                if (!isSending && requestStore.currentRequest) {
+                  sendQuery();
+                }
+              }}
+            />
+            {#if !receivedData}
+              <div
+                class="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 pointer-events-none"
+              >
+                <FileOutput size="3rem" class="mb-2 text-stone-500" />
+                <p class="text-stone-500">Response</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Status Bar -->
+        <footer
+          class="h-8 text-stone-400 text-sm bg-stone-800 flex items-center justify-end px-4 border-t border-stone-700"
+        >
+          {statusText}
+        </footer>
+      </div>
+    {/if}
+  </div>
 
   <!-- Add Collection Dialog Component -->
   <AddCollectionDialog
