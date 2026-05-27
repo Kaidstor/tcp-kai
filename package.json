@@ -1,6 +1,6 @@
 {
   "name": "tcp-client",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "",
   "type": "module",
   "scripts": {
@@ -15,12 +15,13 @@
   "license": "MIT",
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
-    "@tauri-apps/api": "^2.10.1",
+    "@tanstack/svelte-hotkeys": "^0.10.0",
+    "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-clipboard-manager": "~2.3.2",
     "@tauri-apps/plugin-notification": "~2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@tauri-apps/plugin-process": "~2.3.1",
-    "@tauri-apps/plugin-sql": "~2.3.2",
+    "@tauri-apps/plugin-sql": "~2.4.0",
     "@tauri-apps/plugin-updater": "^2.10.0",
     "bits-ui": "^1.8.0",
     "lucide-svelte": "^0.501.0",
