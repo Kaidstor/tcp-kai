@@ -24,6 +24,20 @@ fi
 #   - проект уже имеет релиз по тегу v<old>, мы создадим новый
 
 
+# Повтор команды при сетевых сбоях (gitlab.com бывает нестабилен:
+# SSH-push и upload могут падать по таймауту)
+retry() {
+  local attempts=5
+  local i
+  for ((i = 1; i <= attempts; i++)); do
+    if "$@"; then return 0; fi
+    echo "  ⚠ Попытка $i/$attempts не удалась: $*" >&2
+    sleep 10
+  done
+  echo "ERROR: не удалось после $attempts попыток: $*" >&2
+  return 1
+}
+
 # Determine version: use argument if provided, else bump patch version from package.json
 if [ $# -eq 0 ] || [ -z "$1" ]; then
   CUR_VER=$(jq -r .version package.json)
@@ -51,10 +65,13 @@ git commit -m "release: ${TAG}"
 
 echo "> Создаём Git-тег $TAG"
 git tag "$TAG"
-git push origin "$TAG"
+retry git push origin "$TAG"
+
+echo "> Пушим ветку ${RELEASE_BRANCH:-main}"
+retry git push origin "${RELEASE_BRANCH:-main}"
 
 echo "> Создаём релиз $TAG"
-RELEASE_RESP=$(curl -s -w "\n%{http_code}" --request POST \
+RELEASE_RESP=$(curl -s -w "\n%{http_code}" --retry 3 --retry-all-errors --max-time 60 --request POST \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\":\"Release $TAG\",\"tag_name\":\"$TAG\",\"description\":\"Release $TAG\"}" \
@@ -133,23 +150,34 @@ printf '  %s\n' "${BUNDLE_FILES[@]}"
 # 7) Заливаем каждый файл через Uploads API
 for file in "${BUNDLE_FILES[@]}"; do
   echo "→ Upload: $file"
-  RESP=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  RESP=$(curl -s --retry 3 --retry-all-errors --max-time 300 \
+    --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --form "file=@$file" \
     "$API/projects/$PROJECT_ID/uploads")
 
   # GitLab ≥17.1 возвращает .full_path, а более старые версии – .url
   URL=$(echo "$RESP" | jq -r '.full_path // .url')
+  if [[ -z "$URL" || "$URL" == "null" ]]; then
+    echo "ERROR: upload не вернул URL для $file"
+    echo "Response: $RESP"
+    exit 1
+  fi
   # Формируем абсолютный URL, который корректен для всех версий GitLab
   FULL_URL="https://gitlab.com${URL}"
   NAME=$(basename "$file")
 
   # 8) Привязываем к релизу asset-link
   echo "  → Link to release ${TAG}: $NAME"
-  curl -s --request POST \
+  LINK_RESP=$(curl -s --retry 3 --retry-all-errors --max-time 60 --request POST \
     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --header "Content-Type: application/json" \
     --data "{\"name\":\"$NAME\",\"url\":\"$FULL_URL\",\"direct_asset_path\":\"/$NAME\"}" \
-    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links" > /dev/null
+    "$API/projects/$PROJECT_ID/releases/$TAG/assets/links")
+  if ! echo "$LINK_RESP" | jq -e '.id' > /dev/null; then
+    echo "ERROR: не удалось привязать $NAME к релизу"
+    echo "Response: $LINK_RESP"
+    exit 1
+  fi
 
   echo "    ✓ $NAME"
   if [[ "$DEBUG" == "1" ]]; then
