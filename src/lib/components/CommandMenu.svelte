@@ -1,26 +1,31 @@
 <script lang="ts">
   import { Command, Dialog } from "bits-ui";
-  import { Search, Database, Settings, Plus, Trash2, ChevronLeft } from "lucide-svelte";
+  import { Search, Database, Settings, Plus, Trash2, ChevronLeft, Pencil } from "lucide-svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import type { Collection } from "$lib/db/schema";
   import { onMount, onDestroy, tick } from "svelte";
   import { appStore } from "$lib/store/app-store.svelte";
   import { requestStore } from "$lib/store/request-store.svelte";
+  import { createHotkey } from "@tanstack/svelte-hotkeys";
 
   interface Props {
     onAddCollection: () => void;
     onOpenEnvConfig: () => void;
     onDeleteCollection?: (id: number) => void;
+    onRenameCollection?: (id: number, name: string) => void;
     onSelectRequest?: (requestId: number) => void;
     onCreateRequest?: (cmd: string) => void;
+    onCreateCollection?: (name: string) => void;
   }
 
   const {
     onAddCollection,
     onOpenEnvConfig,
     onDeleteCollection,
+    onRenameCollection,
     onSelectRequest,
     onCreateRequest,
+    onCreateCollection,
   }: Props = $props();
 
   let dialogOpen = $state(false);
@@ -32,7 +37,7 @@
   let commandWrapperEl: HTMLElement | null = null;
 
   // Режимы работы Command меню
-  type MenuMode = "collections" | "actions" | "requests";
+  type MenuMode = "collections" | "actions" | "requests" | "rename";
   let currentMode = $state<MenuMode>("collections");
 
   // Raycast-like actions
@@ -52,41 +57,27 @@
   };
 
   let currentTarget = $state<ActionTarget | null>(null);
+  let renameTarget = $state<ActionTarget | null>(null);
 
-  // Проверяет текущий выделенный элемент через DOM
   function getSelectedCommandItem(): string | null {
     if (!commandWrapperEl) return null;
 
-    // Ищем элемент с атрибутом data-selected
     const selectedItem = commandWrapperEl.querySelector("[data-selected]");
-    if (!selectedItem) {
-      console.log("No selected item found");
-      return null;
-    }
+    if (!selectedItem) return null;
 
-    // Пытаемся получить value из атрибутов
     let value = selectedItem.getAttribute("data-value");
 
-    // Если нет data-value, пробуем получить value из другого элемента
     if (!value) {
-      // Ищем вложенный элемент Command.Item, который должен содержать value
       const parent = selectedItem.closest(".command-item");
       if (parent) {
         value = parent.getAttribute("data-value");
       }
 
-      // Если всё ещё нет, пробуем получить ID из текста
       if (!value) {
-        // Ищем элемент коллекции по его тексту
         const collectionItems = commandWrapperEl.querySelectorAll(".command-item");
-
-        // Находим именно выделенный элемент среди всех
         for (const item of collectionItems) {
           if (item.contains(selectedItem)) {
-            // Получаем имя коллекции из текстового содержимого
             const collectionName = item.textContent?.trim();
-
-            // Находим коллекцию по имени
             const collection = appStore.collections.find(
               (c) => c.name === collectionName,
             );
@@ -102,95 +93,109 @@
     return value;
   }
 
-  // Обработка глобальной горячей клавиши для открытия меню
-  function handleGlobalCmdK(e: KeyboardEvent) {
-    if (e.key === "p" && (e.metaKey || e.ctrlKey) && !dialogOpen) {
-      e.preventDefault();
+  // Глобальные хоткеи через @tanstack/svelte-hotkeys
+  createHotkey("Mod+P", () => {
+    if (!dialogOpen) {
       currentMode = "collections";
       dialogOpen = true;
     }
-    if (e.key === "k" && (e.metaKey || e.ctrlKey) && !dialogOpen) {
-      e.preventDefault();
+  });
+
+  createHotkey("Mod+K", async () => {
+    if (!dialogOpen) {
+      currentMode = "requests";
+      dialogOpen = true;
+    } else if (currentMode === "collections") {
+      await tick();
+      const selectedValue = getSelectedCommandItem();
+      if (selectedValue?.startsWith("select-collection-")) {
+        const collectionId = parseInt(selectedValue.replace("select-collection-", ""));
+        const collection = appStore.collections.find((c) => c.id === collectionId);
+        if (collection) showCollectionActions(collection);
+      }
+    }
+  });
+
+  createHotkey(
+    "Mod+E",
+    () => {
+      onOpenEnvConfig();
+      resetSearch();
+      dialogOpen = false;
+    },
+    () => ({
+      enabled: dialogOpen && currentMode === "actions" && !!currentTarget?.isSelected,
+    }),
+  );
+
+  createHotkey(
+    "Mod+Backspace",
+    () => {
+      if (currentTarget && onDeleteCollection) {
+        openDeleteConfirm(currentTarget.id);
+      }
+    },
+    () => ({
+      enabled: dialogOpen && currentMode === "actions" && !!currentTarget,
+    }),
+  );
+
+  // Обработчик кастомного события от Monaco (Monaco перехватывает клавиатурные события)
+  function handleOpenCommandMenu() {
+    if (!dialogOpen) {
+      currentMode = "collections";
+      dialogOpen = true;
+    }
+  }
+
+  function handleOpenCommandMenuRequests() {
+    if (!dialogOpen) {
       currentMode = "requests";
       dialogOpen = true;
     }
   }
 
-  // Обработчик кастомного события от Monaco
-  function handleOpenCommandMenu() {
-    if (!dialogOpen) {
-      dialogOpen = true;
-    }
-  }
-
   onMount(() => {
-    window.addEventListener("keydown", handleGlobalCmdK);
     window.addEventListener("openCommandMenu", handleOpenCommandMenu);
+    window.addEventListener("openCommandMenuRequests", handleOpenCommandMenuRequests);
   });
 
   onDestroy(() => {
-    window.removeEventListener("keydown", handleGlobalCmdK);
     window.removeEventListener("openCommandMenu", handleOpenCommandMenu);
+    window.removeEventListener("openCommandMenuRequests", handleOpenCommandMenuRequests);
   });
 
-  // Обработчик для клавиш внутри Command
-  async function handleCommandKeydown(e: KeyboardEvent) {
-    console.log("Command keydown captured:", e.key, "meta:", e.metaKey);
-
-    // Если мы в режиме коллекций
-    if (currentMode === "collections") {
-      if (e.key === "p" && (e.metaKey || e.ctrlKey)) {
+  // Escape в режиме actions/rename — возврат (element-level, чтобы опередить Dialog)
+  function handleCommandKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      if (currentMode === "rename") {
         e.preventDefault();
-
-        // Даем время для обновления DOM перед проверкой выделенного элемента
-        await tick();
-
-        // Получаем выделенный элемент непосредственно из DOM
-        const selectedValue = getSelectedCommandItem();
-        console.log("Selected value from DOM:", selectedValue);
-
-        if (selectedValue && selectedValue.startsWith("select-collection-")) {
-          const collectionId = parseInt(selectedValue.replace("select-collection-", ""));
-          const collection = appStore.collections.find((c) => c.id === collectionId);
-
-          if (collection) {
-            showCollectionActions(collection);
-          } else {
-            console.log("Collection not found for ID:", collectionId);
-          }
+        e.stopPropagation();
+        renameTarget = null;
+        if (currentTarget) {
+          currentMode = "actions";
+          searchText = "";
         } else {
-          console.log("No valid selected item found in DOM");
+          resetSearch();
         }
+      } else if (currentMode === "actions") {
+        e.preventDefault();
+        e.stopPropagation();
+        resetSearch();
       }
     }
-    // Если мы в режиме действий
-    else if (currentMode === "actions" && currentTarget) {
-      // Esc для возврата в основное меню
-      if (e.key === "Escape") {
-        e.preventDefault();
-        resetSearch();
-        return;
+    if (currentMode === "rename" && e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      const newName = searchText.trim();
+      if (newName && renameTarget && onRenameCollection) {
+        if (!appStore.collections.some((c) => c.id !== renameTarget!.id && c.name.toLowerCase() === newName.toLowerCase())) {
+          onRenameCollection(renameTarget.id, newName);
+        }
       }
-
-      // Env shortcut: ⌘E
-      if (e.key === "e" && e.metaKey && currentTarget.isSelected) {
-        e.preventDefault();
-        onOpenEnvConfig();
-        resetSearch();
-        dialogOpen = false;
-        return;
-      }
-
-      // Delete shortcut: ⌘⌫
-      if (
-        (e.key === "Backspace" || e.key === "Delete") &&
-        e.metaKey &&
-        onDeleteCollection
-      ) {
-        e.preventDefault();
-        openDeleteConfirm(currentTarget.id);
-        return;
-      }
+      renameTarget = null;
+      resetSearch();
+      dialogOpen = false;
     }
   }
 
@@ -209,8 +214,6 @@
       },
     ];
 
-    console.log("Collection actions:", actions);
-
     if (collection.isSelected) {
       actions.push({
         id: "env",
@@ -221,6 +224,20 @@
           onOpenEnvConfig();
           resetSearch();
           dialogOpen = false;
+        },
+      });
+    }
+
+    if (onRenameCollection) {
+      actions.push({
+        id: "rename",
+        name: "Переименовать",
+        shortcut: "",
+        icon: Pencil,
+        action: () => {
+          renameTarget = collection;
+          currentMode = "rename";
+          searchText = collection.name;
         },
       });
     }
@@ -248,14 +265,18 @@
   }
 
   function handleSelect(value: string) {
-    // Если мы в режиме коллекций
     if (currentMode === "collections") {
-      // Проверяем, какое действие было выбрано
       if (value === "add-collection") {
         onAddCollection();
         dialogOpen = false;
+      } else if (value === "create-collection") {
+        const name = searchText.trim();
+        if (name && onCreateCollection) {
+          onCreateCollection(name);
+          resetSearch();
+          dialogOpen = false;
+        }
       } else if (value.startsWith("select-collection-")) {
-        // Сразу выбираем коллекцию (основное действие при Enter)
         const collectionId = parseInt(value.replace("select-collection-", ""));
         appStore.setCurrentCollection(collectionId);
         dialogOpen = false;
@@ -299,9 +320,9 @@
       name: collection.name,
       isSelected: collection.id === appStore.currentCollection?.id,
     };
-    // Переключаемся в режим действий
     currentMode = "actions";
-    searchValue = ""; // Сбрасываем поисковую строку
+    searchValue = "";
+    searchText = "";
   }
 
   function getSelectedCollectionName() {
@@ -335,17 +356,13 @@
     searchValue = "";
     searchText = "";
     currentTarget = null;
+    renameTarget = null;
   }
 
   // Обработчик изменения состояния Command
   function handleStateChange(state: any) {
-    console.log("Command state changed:", state);
     if (state && state.selectedValue !== undefined) {
       highlightedItem = state.selectedValue;
-      console.log("Highlighted item changed to:", highlightedItem);
-    }
-    if (state && state.search !== undefined) {
-      searchText = state.search;
     }
   }
 </script>
@@ -382,23 +399,30 @@
             <div class="flex items-center px-3 border-b border-stone-700">
               <Search class="w-4 h-4 mr-2 text-stone-400" />
               <Command.Input
+                bind:value={searchText}
                 placeholder={currentMode === "collections"
                   ? "Поиск коллекций..."
                   : currentMode === "requests"
                     ? "Поиск запросов (cmd)..."
-                    : "Поиск действий..."}
+                    : currentMode === "rename"
+                      ? "Новое имя коллекции..."
+                      : "Поиск действий..."}
                 class="h-10 py-2 w-full bg-stone-800 text-white focus:outline-none"
               />
             </div>
 
             <Command.List class="max-h-[300px] overflow-y-auto p-1">
-              <Command.Empty class="py-6 text-center text-sm text-stone-400">
-                {currentMode === "collections"
-                  ? "Коллекции не найдены"
-                  : currentMode === "actions"
-                    ? "Нет доступных действий"
-                    : ""}
-              </Command.Empty>
+              {#if currentMode === "rename"}
+                <div class="px-3 py-4 text-sm text-stone-400">
+                  Введите новое имя и нажмите <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-stone-700 rounded">↵</kbd>
+                </div>
+              {:else}
+
+              {#if currentMode === "actions"}
+                <Command.Empty class="py-6 text-center text-sm text-stone-400">
+                  Нет доступных действий
+                </Command.Empty>
+              {/if}
 
               <!-- Группа коллекций (видна в режиме collections и actions) -->
               {#if currentMode !== "requests"}
@@ -461,12 +485,27 @@
                         <kbd
                           class="hidden group-data-selected:flex items-center justify-center px-1.5 py-0.5 text-[10px] font-mono text-stone-400 bg-stone-700 rounded"
                         >
-                          ⌘P
+                          ⌘K
                         </kbd>
                       </Command.Item>
                     {/each}
                   {/if}
                 </Command.Group>
+
+                <!-- Отдельная группа для создания коллекции (forceMount чтобы не скрывалась фильтром) -->
+                {#if currentMode === "collections" && searchText.trim() && onCreateCollection && !appStore.collections.some((c) => c.name.toLowerCase() === searchText.trim().toLowerCase())}
+                  <Command.Group forceMount>
+                    <Command.Item
+                      value="create-collection"
+                      onSelect={() => handleSelect("create-collection")}
+                      class="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer hover:bg-stone-700 data-selected:bg-stone-700 command-item"
+                      forceMount
+                    >
+                      <Plus class="w-4 h-4 text-stone-400" />
+                      <span>Создать коллекцию <strong>"{searchText.trim()}"</strong></span>
+                    </Command.Item>
+                  </Command.Group>
+                {/if}
               {/if}
 
               <!-- Группа запросов (видна в режиме requests) -->
@@ -534,6 +573,7 @@
               {/if}
 
               <!-- Группа действий с коллекцией (видна в режиме actions) -->
+              {/if}<!-- /rename else -->
             </Command.List>
           </Command.Root>
         </div>

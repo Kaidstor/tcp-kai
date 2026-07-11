@@ -49,9 +49,13 @@
       onSendRequest();
     });
 
-    // Add cmd+p handler to open command menu (bypass Monaco's event capture)
+    // Bypass Monaco's event capture for global shortcuts
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => {
       window.dispatchEvent(new CustomEvent("openCommandMenu"));
+    });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
+      window.dispatchEvent(new CustomEvent("openCommandMenuRequests"));
     });
 
     // Set up two-way binding

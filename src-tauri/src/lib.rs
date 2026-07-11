@@ -101,6 +101,20 @@ ALTER TABLE requests ADD COLUMN weight INTEGER;
             .into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "add_unique_collection_name".into(),
+            sql: r#"
+UPDATE collections
+SET name = name || ' (' || id || ')'
+WHERE id NOT IN (
+  SELECT MIN(id) FROM collections GROUP BY name
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_name ON collections(name);
+"#
+            .into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

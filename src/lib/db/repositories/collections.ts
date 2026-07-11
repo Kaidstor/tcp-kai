@@ -20,6 +20,10 @@ export class SchemaCollectionsRepository extends BaseSchemaRepository<Collection
     return await this.create({ name });
   }
 
+  async rename(collectionId: number, name: string): Promise<void> {
+    await this.update(collectionId, { name });
+  }
+
   // Обновление связи коллекции с пакетом переменных окружения
   async updatePack(collectionId: number, packId: number | null): Promise<void> {
     await this.update(collectionId, { pack_id: packId });

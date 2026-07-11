@@ -8,6 +8,7 @@
     FileOutput,
     SendHorizontal,
     Square,
+    Database,
   } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
   import ScrollArea from "$lib/components/ScrollArea.svelte";
@@ -22,6 +23,7 @@
   import type { RequestItem } from "$lib/db/schema";
   import { processEnvVars } from "$lib/utils";
   import { onMount } from "svelte";
+  import { createHotkey } from "@tanstack/svelte-hotkeys";
   import UpdaterButton from "$lib/components/UpdaterButton.svelte";
   import { appStore } from "$lib/store/app-store.svelte";
   import { envStore } from "$lib/store/env-store.svelte";
@@ -68,6 +70,8 @@
   }
   async function confirmAdd(name: string) {
     if (!name) return;
+    if (appStore.collections.some((c) => c.name.toLowerCase() === name.toLowerCase()))
+      return;
     const colId = await db.collections.add(name);
 
     appStore.collections.push({
@@ -86,6 +90,14 @@
 
   function openEnvConfig() {
     showEnvConfig = true;
+  }
+
+  async function handleRenameCollection(colId: number, newName: string) {
+    if (appStore.collections.some((c) => c.id !== colId && c.name.toLowerCase() === newName.toLowerCase()))
+      return;
+    await db.collections.rename(colId, newName);
+    const col = appStore.collections.find((c) => c.id === colId);
+    if (col) col.name = newName;
   }
 
   // Удаление коллекции
@@ -345,30 +357,15 @@
     }
   }
 
+  createHotkey("Mod+E", () => openEnvConfig());
+  createHotkey("Mod+Enter", () => {
+    if (!isSending && requestStore.currentRequest) {
+      sendQuery();
+    }
+  });
+
   onMount(() => {
     restoreAppState();
-
-    // Add keyboard shortcut listener
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Cmd+E (Mac) or Ctrl+E (Windows/Linux)
-      if ((e.metaKey || e.ctrlKey) && e.key === "e") {
-        e.preventDefault();
-        openEnvConfig();
-      }
-
-      // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) to send request
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        if (!isSending && requestStore.currentRequest) {
-          sendQuery();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
   });
 
   $effect(() => {
@@ -432,23 +429,28 @@
         onAddCollection={openAdd}
         onOpenEnvConfig={openEnvConfig}
         onDeleteCollection={handleDeleteCollection}
+        onRenameCollection={handleRenameCollection}
         onSelectRequest={(requestId) => {
           const req = requestStore.getRequest(requestId);
           if (req) selectRequest(req);
         }}
         onCreateRequest={confirmAddRequest}
+        onCreateCollection={confirmAdd}
       />
     </div>
     <div class="flex items-center gap-3 pr-2">
-      <!-- Env vars -->
+      <!-- Env vars (host/port only) -->
       {#if envStore.currentEnvPack?.vars?.length}
-        <div class="flex gap-1 items-center text-[11px] text-stone-500">
-          {#each envStore.currentEnvPack.vars as v}
-            <span class="p-0.5 rounded truncate max-w-[120px]" title="{v.key}={v.value}">
-              {v.key}=<span class="text-stone-400">{v.value}</span>
-            </span>
-          {/each}
-        </div>
+        {@const shown = envStore.currentEnvPack.vars.filter((v) => ['host', 'port'].includes(v.key.toLowerCase()))}
+        {#if shown.length}
+          <div class="flex gap-1 items-center text-[11px] text-stone-500">
+            {#each shown as v}
+              <span class="p-0.5 rounded truncate max-w-[120px]" title="{v.key}={v.value}">
+                {v.key}=<span class="text-stone-400">{v.value}</span>
+              </span>
+            {/each}
+          </div>
+        {/if}
       {/if}
       <!-- History -->
       {#if history.length > 0}
@@ -498,6 +500,16 @@
     </div>
   </div>
 
+  {#if !appStore.currentCollection}
+    <div class="flex-1 flex flex-col items-center justify-center gap-4 text-stone-400">
+      <Database size="3rem" class="text-stone-600" />
+      <p class="text-lg">Выберите или создайте коллекцию</p>
+      <p class="text-sm text-stone-500">
+        <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-stone-700 text-stone-300 rounded">⌘P</kbd>
+        — выбрать коллекцию
+      </p>
+    </div>
+  {:else}
   <div class="flex flex-1 overflow-hidden">
     <!-- Sidebar -->
     <aside
@@ -660,6 +672,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 
   <!-- Add Collection Dialog Component -->
   <AddCollectionDialog

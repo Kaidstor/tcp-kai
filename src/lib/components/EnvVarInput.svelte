@@ -28,16 +28,14 @@
 
   // Function to highlight env vars in the input
   function highlightEnvVars(text: string, vars: { key: string; value: string }[]) {
-    const keys = vars.map((v) => v.key);
+    const varMap = new Map(vars.map((v) => [v.key, v.value]));
     let result = [];
     let lastIndex = 0;
 
-    // Regular expression to find {{var}} patterns
     const regex = /\{\{([^}]+)\}\}/g;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
-      // Add text before the match
       if (match.index > lastIndex) {
         result.push({
           type: "text",
@@ -45,19 +43,18 @@
         });
       }
 
-      // Add the matched variable
       const varName = match[1];
       result.push({
         type: "var",
         content: match[0],
         name: varName,
-        exists: keys?.includes(varName),
+        exists: varMap.has(varName),
+        resolvedValue: varMap.get(varName) ?? null,
       });
 
       lastIndex = match.index + match[0].length;
     }
 
-    // Add any remaining text
     if (lastIndex < text.length) {
       result.push({
         type: "text",
@@ -201,16 +198,17 @@
 
   <!-- Visual overlay for highlighting -->
   <div
-    class="absolute top-0 left-0 right-0 bottom-0 pointer-events-none p-2 flex items-center whitespace-pre overflow-hidden"
+    class="absolute top-0 left-0 right-0 bottom-0 p-2 flex items-center whitespace-pre overflow-hidden"
   >
     {#each processedValue as part}
       {#if part.type === "text"}
-        <span class="text-white">{part.content}</span>
+        <span class="text-white pointer-events-none">{part.content}</span>
       {:else}
         <span
-          class={part.exists
-            ? "text-yellow-400"
-            : "text-yellow-400 border-b-2 border-red-500"}
+          class="{part.exists
+            ? 'text-yellow-400'
+            : 'text-yellow-400 border-b-2 border-red-500'} pointer-events-auto cursor-default"
+          title={part.resolvedValue != null ? `${part.name} = ${part.resolvedValue}` : `${part.name} (not defined)`}
         >
           {part.content}
         </span>

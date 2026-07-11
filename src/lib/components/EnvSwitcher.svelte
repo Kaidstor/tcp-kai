@@ -4,7 +4,7 @@
   import { envStore } from "$lib/store/env-store.svelte";
   import { appStore } from "$lib/store/app-store.svelte";
   import { db } from "$lib/db/repositories";
-  import { onMount, onDestroy } from "svelte";
+  import { createHotkey } from "@tanstack/svelte-hotkeys";
 
   interface Props {
     onOpenSettings: () => void;
@@ -14,7 +14,6 @@
 
   let open = $state(false);
 
-  // Фильтруем паки: глобальные + привязанные к текущей коллекции
   let availablePacks = $derived(
     envStore.envPacks.filter(
       (pack) =>
@@ -42,19 +41,8 @@
     open = false;
   }
 
-  function handleGlobalShortcut(e: KeyboardEvent) {
-    if (e.key === "." && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      open = !open;
-    }
-  }
-
-  onMount(() => {
-    window.addEventListener("keydown", handleGlobalShortcut);
-  });
-
-  onDestroy(() => {
-    window.removeEventListener("keydown", handleGlobalShortcut);
+  createHotkey("Mod+.", () => {
+    open = !open;
   });
 </script>
 
