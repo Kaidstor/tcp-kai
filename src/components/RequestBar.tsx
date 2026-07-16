@@ -1,7 +1,7 @@
 // Address + cmd + send/stop. The URL resolves `{{vars}}` against the
 // collection's env pack; both fields are saved on send. Плюс режим события
 // (@EventPattern) и превью кадра — GUI-аналог `tcp-kai --dry-run`.
-import { Eye, SendHorizontal, Square, Zap } from "lucide-react";
+import { Eye, SendHorizontal, Square } from "lucide-react";
 import { useState } from "react";
 import { activeVars, isSending, useApp } from "../lib/store";
 import { processEnvVars } from "../lib/utils";
@@ -33,7 +33,6 @@ export function RequestBar() {
   const sending = useApp(isSending);
   const send = useApp((s) => s.send);
   const stop = useApp((s) => s.stop);
-  const setEmitFlag = useApp((s) => s.setEmitFlag);
   const [preview, setPreview] = useState<string | null>(null);
 
   const openPreview = () => {
@@ -58,17 +57,6 @@ export function RequestBar() {
         onChange={(e) => patchDraft({ cmd: e.target.value })}
       />
       <div className="flex items-center gap-1">
-        <IconButton
-          title={
-            draft.emit
-              ? "Event-паттерн: кадр без id, ответ не ожидается (выключить)"
-              : "Отправлять как событие (@EventPattern)"
-          }
-          onClick={() => void setEmitFlag(!draft.emit)}
-          className={cn(draft.emit && "bg-amber-500/15 text-amber-400")}
-        >
-          <Zap size={14} />
-        </IconButton>
         <IconButton title="Превью кадра (с подстановкой переменных)" onClick={openPreview}>
           <Eye size={14} />
         </IconButton>
