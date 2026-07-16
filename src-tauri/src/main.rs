@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tcp_client_lib::run()
+    tcp_kai_lib::run()
 }

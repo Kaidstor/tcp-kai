@@ -1,49 +1,130 @@
-import { sendNotification, requestPermission, isPermissionGranted } from '@tauri-apps/plugin-notification';
+import type { EnvVar } from "./types";
 
-/**
- * Display a desktop notification via Tauri
- */
-export async function notification(title: string, body: string) {
-   try {
-    // Do you have permission to send a notification?
-    let permissionGranted = await isPermissionGranted();
-
-    // If not we need to request it
-    if (!permissionGranted) {
-      const permission = await requestPermission();
-      permissionGranted = permission === "granted";
-    }
-
-    // Once permission has been granted we can send the notification
-    if (permissionGranted) {
-      sendNotification({ title, body });
-    }
-  } catch (e) {
-    console.error("Notification error:", e);
-  }
-}
-
-/**
- * Replace environment variables in a string with their values
- * @param text The text containing {{variable}} placeholders
- * @param envVars Array of environment variables
- * @returns The text with variables replaced by their values
- */
-export function processEnvVars(text: string, envVars: { key: string; value: string }[]): string {
-  if (!text || !envVars || envVars.length === 0) return text;
-  
-  const varMap = new Map(envVars.map(v => [v.key, v.value]));
-  
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
-    const value = varMap.get(varName);
-    return value !== undefined ? value : match; // Keep original if var not found
+/** `{{name}}` placeholders resolved against the active env pack. Unknown
+ *  names are left verbatim — a typo shows up in the request instead of
+ *  silently becoming an empty string. */
+export function processEnvVars(text: string, envVars: EnvVar[]): string {
+  if (!text || envVars.length === 0) return text;
+  const values = new Map(envVars.map((v) => [v.key, v.value]));
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, name: string) => {
+    const value = values.get(name.trim());
+    return value !== undefined ? value : match;
   });
 }
 
-/**
- * Stub for exporting JSON data to XLSX.
- */
-export function exportToXLSX(data: any[]) {
-  // Implementation would convert `data` to an XLSX file and trigger download.
-  console.log('Export to XLSX:', data);
-} 
+/** Pretty-prints JSON; returns the input untouched when it isn't valid JSON. */
+export function formatJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/** ms → "1.23s", the unit every status line and history row uses. */
+export const secs = (ms: number): string => `${(ms / 1000).toFixed(2)}s`;
+
+/** Непустое тело, которое не разберётся как JSON: NestJS-кадр молча отправит
+ *  `data: null` — GUI спрашивает подтверждение до отправки. */
+export function isInvalidJsonBody(body: string): boolean {
+  const trimmed = body.trim();
+  if (!trimmed) return false;
+  try {
+    JSON.parse(trimmed);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Пак похож на боевой стенд — для красного бейджа и confirm на запись. */
+export const isProdPack = (name: string | undefined | null): boolean =>
+  !!name && /prod|live|боев/i.test(name);
+
+// Токены cmd, которые обычно означают запись/изменение состояния сервиса —
+// ровно те, о которых предупреждает skills/tcp-kai (create-*, update-*, …),
+// плюс частые в rebrandy инфиксы вида domains-set-status.
+const WRITE_TOKENS = new Set([
+  "create",
+  "update",
+  "delete",
+  "remove",
+  "drop",
+  "add",
+  "insert",
+  "set",
+  "unset",
+  "upsert",
+  "send",
+  "save",
+  "write",
+  "sync",
+  "reset",
+  "start",
+  "stop",
+  "exec",
+  "import",
+]);
+
+export const isWriteCmd = (cmd: string): boolean =>
+  cmd
+    .toLowerCase()
+    .split(/[-_.:\s]+/)
+    .some((token) => WRITE_TOKENS.has(token));
+
+/** Конверт NestJS-транспорта: `{err, response, isDisposed, id}`. */
+export interface Envelope {
+  /** null/undefined — сервис не вернул ошибку. */
+  err: unknown;
+  response: unknown;
+}
+
+/** Распознаёт конверт в сыром ответе. Не-конверт (нестандартный сервис,
+ *  старая запись истории) возвращается как null — показывается как есть. */
+export function parseEnvelope(received: string): Envelope | null {
+  if (!received.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(received);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      ("response" in parsed || "err" in parsed) &&
+      ("isDisposed" in parsed || "id" in parsed)
+    ) {
+      const p = parsed as Record<string, unknown>;
+      return { err: p.err ?? null, response: p.response };
+    }
+  } catch {
+    // не JSON — показываем сырым
+  }
+  return null;
+}
+
+/** Что показывать в панели ответа: развёрнутый `response` (или `err`),
+ *  либо исходный текст, когда это не конверт. */
+export function unwrapReceived(received: string): {
+  text: string;
+  /** Сервис вернул err в конверте. */
+  isErr: boolean;
+  /** Конверт распознан — тумблер raw имеет смысл. */
+  isEnvelope: boolean;
+} {
+  const envelope = parseEnvelope(received);
+  if (!envelope) return { text: received, isErr: false, isEnvelope: false };
+  if (envelope.err !== null && envelope.err !== undefined) {
+    return {
+      text: JSON.stringify(envelope.err, null, 2),
+      isErr: true,
+      isEnvelope: true,
+    };
+  }
+  return {
+    text:
+      envelope.response === undefined
+        ? ""
+        : JSON.stringify(envelope.response, null, 2),
+    isErr: false,
+    isEnvelope: true,
+  };
+}

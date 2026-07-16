@@ -4,6 +4,14 @@ use tauri_plugin_process;
 use tauri_plugin_updater;
 
 mod commands;
+pub mod contract;
+pub mod tcp;
+
+// Доступ к app.db из Rust нужен только CLI: у GUI база своя, через plugin-sql
+// на фронтенде. Под фичей, чтобы обычная сборка не тянула sqlx напрямую.
+#[cfg(feature = "cli")]
+pub mod db;
+
 use std::sync::{Arc, Mutex};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -115,6 +123,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_name ON collections(name);
             .into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "history_context_and_emit".into(),
+            sql: r#"
+-- Контекст обмена на момент отправки: без него запись истории после
+-- переименования cmd или смены пака перестаёт что-либо говорить.
+-- ok: 0 — обмен не удался (раньше ошибки в историю не попадали вовсе).
+ALTER TABLE history ADD COLUMN ok INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE history ADD COLUMN cmd TEXT;
+ALTER TABLE history ADD COLUMN url TEXT;
+ALTER TABLE history ADD COLUMN pack TEXT;
+-- Event-паттерн (@EventPattern): кадр без id, ответ не ожидается.
+ALTER TABLE requests ADD COLUMN emit INTEGER NOT NULL DEFAULT 0;
+"#
+            .into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -140,7 +165,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_name ON collections(name);
         .manage(Arc::new(Mutex::new(commands::RequestState::new())))
         .invoke_handler(tauri::generate_handler![
             commands::send_tcp_request,
-            commands::cancel_tcp_request
+            commands::cancel_tcp_request,
+            commands::parse_contract
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
