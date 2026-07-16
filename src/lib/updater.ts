@@ -1,142 +1,113 @@
-import { check, Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
-import { writable } from 'svelte/store';
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { create } from "zustand";
 
-// Состояние проверки обновлений
-export const updateStatus = writable({
-  checking: false,
-  available: false,
-  version: '',
-  releaseDate: '',
-  error: '',
-  downloading: false,
-  progress: 0
-});
+/** Outcome of an explicit "Check for Updates…" (menu) — drives toast feedback. */
+export type ManualCheckResult =
+  | { status: "found" }
+  | { status: "upToDate" }
+  | { status: "error"; message: string };
 
-// Время последней проверки
+type UpdaterStore = {
+  checking: boolean;
+  /** Available update, null when up to date (or not checked yet). */
+  update: Update | null;
+  downloading: boolean;
+  /** Download progress 0–100, null while total size is unknown. */
+  progress: number | null;
+  /** Update downloaded & installed, waiting for a relaunch to apply. */
+  ready: boolean;
+  error: string | null;
+  manualCheck: ManualCheckResult | null;
+  checkForUpdates: (manual?: boolean) => Promise<void>;
+  /** Download & install the pending update (does not relaunch — sets `ready`). */
+  install: () => Promise<void>;
+  /** Relaunch to apply a downloaded update. */
+  restart: () => Promise<void>;
+};
+
 let lastCheckTime = 0;
-// Интервал между проверками при фокусе (1 час в миллисекундах)
-const CHECK_INTERVAL = 60 * 60 * 1000;
+const CHECK_INTERVAL = 60 * 60 * 1000; // re-check on window focus at most hourly
 
-// Инициализация проверки обновлений
-export function initUpdater() {
-  checkOnFocus();
+export const useUpdater = create<UpdaterStore>((set, get) => ({
+  checking: false,
+  update: null,
+  downloading: false,
+  progress: null,
+  ready: false,
+  error: null,
+  manualCheck: null,
 
-  // Проверяем на фокусе окна
-  window.addEventListener('focus', checkOnFocus);
-  
-  // Вернём функцию очистки
-  return () => {
-    window.removeEventListener('focus', checkOnFocus);
-  };
-}
-
-// Проверка обновлений при фокусе окна
-function checkOnFocus() {
-  const now = Date.now();
-  
-  // Проверяем только если прошло достаточно времени с момента последней проверки
-  if (now - lastCheckTime > CHECK_INTERVAL) {
-    checkForUpdates();
-  }
-}
-
-// Основная функция проверки обновлений
-export async function checkForUpdates() {
-  try {
-    // Обновляем статус
-    updateStatus.set({
-      checking: true,
-      available: false,
-      version: '',
-      releaseDate: '',
-      error: '',
-      downloading: false,
-      progress: 0
-    });
-    
-    // Запоминаем время проверки
+  checkForUpdates: async (manual = false) => {
+    if (get().checking || get().downloading) return;
     lastCheckTime = Date.now();
-    
-    // Проверяем наличие обновлений
-    const update = await check();
-    
-    if (update) {
-      // Есть новая версия
-      updateStatus.set({
+    set({ checking: true, error: null, manualCheck: null });
+    try {
+      const update = await check();
+      set({
         checking: false,
-        available: true,
-        version: update.version || '',
-        releaseDate: update.date || '',
-        error: '',
-        downloading: false,
-        progress: 0
+        update,
+        manualCheck: manual ? { status: update ? "found" : "upToDate" } : null,
       });
-      return update;
-    } else {
-      // Обновлений нет
-      updateStatus.set({
+    } catch (e) {
+      // Expected in dev / before the first release is published — keep quiet
+      // unless the user asked for the check explicitly.
+      set({
         checking: false,
-        available: false,
-        version: '',
-        releaseDate: '',
-        error: '',
-        downloading: false,
-        progress: 0
+        update: null,
+        error: String(e),
+        manualCheck: manual ? { status: "error", message: String(e) } : null,
       });
-      return null;
     }
-  } catch (err) {
-    // Ошибка при проверке
-    updateStatus.set({
-      checking: false,
-      available: false,
-      version: '',
-      releaseDate: '',
-      error: String(err),
-      downloading: false,
-      progress: 0
-    });
-    console.error('Ошибка при проверке обновлений:', err);
-    return null;
-  }
-}
+  },
 
-// Функция для установки обновления
-export async function installUpdate(update: Update | null) {
-  if (!update) return;
-  
-  try {
-    // Устанавливаем статус загрузки
-    updateStatus.update(state => ({ ...state, downloading: true, progress: 0, error: '' }));
-    
-    // Скачиваем и устанавливаем обновление с отслеживанием прогресса
-    await update.downloadAndInstall((progressEvent) => {
-      // Для события прогресса устанавливаем процент загрузки
-      if (progressEvent.event === 'Progress') {
-        // Получаем текущий прогресс (0-100)
-        const percentage = Math.min(
-          Math.round((progressEvent.data.chunkLength / 100) * 100), 
-          100
-        );
-        updateStatus.update(state => ({ ...state, progress: percentage }));
-      }
-    });
-    
-    // Перезапускаем приложение
-    await relaunch();
-  } catch (err) {
-    console.error('Ошибка при установке обновления:', err);
-    updateStatus.update(state => ({ 
-      ...state, 
-      error: String(err),
-      downloading: false,
-      progress: 0
-    }));
-  }
-}
+  install: async () => {
+    const { update, downloading, ready } = get();
+    if (!update || downloading || ready) return;
+    set({ downloading: true, progress: null, error: null });
+    try {
+      let total: number | undefined;
+      let received = 0;
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            total = event.data.contentLength;
+            break;
+          case "Progress":
+            received += event.data.chunkLength;
+            if (total) {
+              set({ progress: Math.min(100, Math.round((received / total) * 100)) });
+            }
+            break;
+          case "Finished":
+            set({ progress: 100 });
+            break;
+        }
+      });
+      // Installed — hold for an explicit relaunch ("Restart to Update").
+      set({ downloading: false, ready: true, progress: 100 });
+    } catch (e) {
+      set({ downloading: false, progress: null, error: String(e) });
+    }
+  },
 
-// Функция для сброса ошибки
-export function clearUpdateError() {
-  updateStatus.update(state => ({ ...state, error: '' }));
+  restart: async () => {
+    try {
+      await relaunch();
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+}));
+
+/** Check now and re-check on window focus (hourly). Returns a cleanup fn. */
+export function initUpdater(): () => void {
+  const handleFocus = () => {
+    if (Date.now() - lastCheckTime > CHECK_INTERVAL) {
+      void useUpdater.getState().checkForUpdates();
+    }
+  };
+  handleFocus();
+  window.addEventListener("focus", handleFocus);
+  return () => window.removeEventListener("focus", handleFocus);
 }
