@@ -1,3 +1,4 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Database } from "lucide-react";
 import { useEffect } from "react";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -5,9 +6,11 @@ import { EditorSplit } from "./components/EditorSplit";
 import { EnvConfigDialog } from "./components/EnvConfigDialog";
 import { EnvSwitcher } from "./components/EnvSwitcher";
 import { HistoryMenu } from "./components/HistoryMenu";
+import { ImportContractDialog } from "./components/ImportContractDialog";
 import { Palette } from "./components/Palette";
 import { PromptDialog } from "./components/PromptDialog";
 import { RequestBar } from "./components/RequestBar";
+import { RunnerDialog } from "./components/RunnerDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
@@ -33,6 +36,20 @@ function App() {
   }, [init]);
 
   useEffect(() => initUpdater(), []);
+
+  // Перетащенный в окно .ts-файл — это контракт: открываем импорт с путём.
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const s = useApp.getState();
+      if (s.currentCollectionId === null) return;
+      const path = event.payload.paths.find((p) => p.endsWith(".ts"));
+      if (path) s.openImport(path);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // App-wide hotkeys. Editor-local ones (⌘↵ to send) are bound in JsonEditor;
   // this handler is the fallback for everywhere else.
@@ -138,6 +155,8 @@ function App() {
       <Palette />
       <EnvConfigDialog />
       <SettingsDialog />
+      <ImportContractDialog />
+      <RunnerDialog />
       <ConfirmDialog />
       <PromptDialog />
     </div>

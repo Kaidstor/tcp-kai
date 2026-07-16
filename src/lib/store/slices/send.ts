@@ -1,10 +1,21 @@
 // The exchange itself: the editors' working copy (draft), the TCP round-trip
-// through the Rust command, and what a successful send records — history
-// entry, usage weight, and the request's saved url/cmd/body.
+// through the Rust command, and what a send records — history entry (both
+// outcomes), usage weight, and the request's saved url/cmd/body/emit.
 import { api, errText, parseApiResponse } from "../../api";
 import { db } from "../../db";
-import { formatJson, processEnvVars, secs } from "../../utils";
-import { activeVars } from "../selectors";
+import {
+  DEFAULT_HISTORY_LIMIT,
+  DEFAULT_TIMEOUT_SECS,
+} from "../../types";
+import {
+  formatJson,
+  isInvalidJsonBody,
+  isProdPack,
+  isWriteCmd,
+  processEnvVars,
+  secs,
+} from "../../utils";
+import { activePack, activeVars } from "../selectors";
 import type { Get, Set } from "../types";
 
 /** What the request bar and the two editors show. Belongs to the open
@@ -16,9 +27,17 @@ export interface Draft {
   body: string;
   /** Pretty-printed response, or "" before the first send. */
   received: string;
+  /** Event-паттерн: кадр без id, ответ не ожидается. */
+  emit: boolean;
 }
 
-const EMPTY_DRAFT: Draft = { url: "", cmd: "", body: "", received: "" };
+export const EMPTY_DRAFT: Draft = {
+  url: "",
+  cmd: "",
+  body: "",
+  received: "",
+  emit: false,
+};
 
 /** −10%, matching the SQL in db.requests.decayWeights. */
 const decay = (weight: number | null) =>
@@ -31,10 +50,15 @@ export interface SendSlice {
   statusText: string;
   /** Duration of the last exchange, ms; null while none has run. */
   requestTime: number | null;
+  /** Исход показанного обмена (для бейджа ответа); null — ещё не было. */
+  lastOk: boolean | null;
+  /** Панель ответа показывает сырой конверт, а не развёрнутый response. */
+  showRaw: boolean;
 
   setDraft: (draft: Draft) => void;
   patchDraft: (patch: Partial<Draft>) => void;
   resetDraft: () => void;
+  setShowRaw: (showRaw: boolean) => void;
   send: () => Promise<void>;
   /** Cancels the in-flight request; the backend drops the connection. */
   stop: () => void;
@@ -44,16 +68,76 @@ export interface SendSlice {
 let startedAt = 0;
 
 export function createSendSlice(set: Set, get: Get): SendSlice {
+  /** Пишет обмен в историю (+ хвост сверх лимита) и отражает его в сторе. */
+  const record = async (args: {
+    requestId: number;
+    sent: string;
+    received: string;
+    ms: number;
+    ok: boolean;
+    cmd: string;
+    url: string;
+    pack: string | null;
+  }) => {
+    const historyId = await db.history.add({
+      request_id: args.requestId,
+      sent: args.sent,
+      received: args.received,
+      execution_time: args.ms,
+      ok: args.ok ? 1 : 0,
+      cmd: args.cmd,
+      url: args.url,
+      pack: args.pack,
+    });
+    const limit = get().settings.history_limit ?? DEFAULT_HISTORY_LIMIT;
+    const pruned = await db.history.prune(args.requestId, limit);
+    await db.requests.decayWeights();
+    await db.requests.bumpWeight(args.requestId);
+    set((s) => ({
+      // `history` belongs to whatever request is open now — if the user
+      // moved on mid-flight, this entry isn't part of that list
+      history:
+        s.currentRequestId === args.requestId
+          ? [
+              {
+                id: historyId,
+                timestamp: new Date().toISOString(),
+                execution_time: args.ms,
+                ok: args.ok ? 1 : 0,
+                pack: args.pack,
+              },
+              ...s.history.filter((h) => !pruned.includes(h.id)),
+            ]
+          : s.history,
+      // mirror the weight SQL exactly (decay all, bump the sent one); the
+      // list keeps its order until reloaded, so rows don't jump around
+      // under the cursor mid-session
+      requests: s.requests.map((r) =>
+        r.id === args.requestId
+          ? { ...r, weight: (decay(r.weight) ?? 0) + 1 }
+          : { ...r, weight: decay(r.weight) },
+      ),
+    }));
+  };
+
   return {
     draft: EMPTY_DRAFT,
     sendingId: null,
     statusText: "Ready",
     requestTime: null,
+    lastOk: null,
+    showRaw: false,
 
     setDraft: (draft) => set({ draft }),
     patchDraft: (patch) => set((s) => ({ draft: { ...s.draft, ...patch } })),
     resetDraft: () =>
-      set({ draft: EMPTY_DRAFT, statusText: "Ready", requestTime: null }),
+      set({
+        draft: EMPTY_DRAFT,
+        statusText: "Ready",
+        requestTime: null,
+        lastOk: null,
+      }),
+    setShowRaw: (showRaw) => set({ showRaw }),
 
     send: async () => {
       const requestId = get().currentRequestId;
@@ -64,6 +148,32 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
       // edits made while it's in flight belong to the next send
       const draft = get().draft;
       const vars = activeVars(get());
+      const pack = activePack(get());
+
+      // непустое не-JSON тело кадр молча превратит в data: null — спросить
+      if (isInvalidJsonBody(draft.body)) {
+        const ok = await get().confirmDialog({
+          title: "Тело — не JSON",
+          message:
+            "NestJS-транспорт отправит data: null вместо тела. Отправить всё равно?",
+          confirmLabel: "Отправить null",
+        });
+        if (!ok) return;
+      }
+
+      // write-паттерн на боевой пак — то, о чём предупреждает skills/tcp-kai
+      if (isProdPack(pack?.name) && isWriteCmd(draft.cmd)) {
+        const ok = await get().confirmDialog({
+          title: `Запись на «${pack?.name}»`,
+          message: `cmd «${draft.cmd}» похож на изменение данных, а пак «${pack?.name}» — на боевой стенд.`,
+          confirmLabel: "Отправить",
+          danger: true,
+        });
+        if (!ok) return;
+      }
+
+      const timeoutSecs = get().settings.timeout_secs ?? DEFAULT_TIMEOUT_SECS;
+      const connection = processEnvVars(draft.url, vars);
       const sendId = String(Date.now());
       startedAt = performance.now();
       set({ sendingId: sendId, statusText: "Sending...", requestTime: null });
@@ -76,10 +186,12 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
 
       try {
         const raw = await api.sendTcpRequest({
-          connection: processEnvVars(draft.url, vars),
+          connection,
           pattern: draft.cmd,
           json: processEnvVars(draft.body, vars),
           requestId: sendId,
+          timeoutMs: timeoutSecs * 1000,
+          emit: draft.emit,
         });
         if (superseded()) return;
 
@@ -91,55 +203,53 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
             get().patchDraft({ received: "" });
             set({
               requestTime: ms,
+              lastOk: false,
               statusText: `Error in ${secs(ms)}: ${response.message}`,
             });
           }
           get().showToast(response.message);
+          // ошибка тоже история: «что я послал, когда упало»
+          await record({
+            requestId: request.id,
+            sent: draft.body,
+            received: response.message,
+            ms,
+            ok: false,
+            cmd: draft.cmd,
+            url: connection,
+            pack: pack?.name ?? null,
+          });
           return;
         }
 
-        const received = formatJson(response.message);
+        const received = draft.emit ? "" : formatJson(response.message);
         if (stillOpen()) {
           get().patchDraft({ received });
-          set({ requestTime: ms, statusText: `Done in ${secs(ms)}` });
+          set({
+            requestTime: ms,
+            lastOk: true,
+            statusText: draft.emit
+              ? `Event sent in ${secs(ms)}`
+              : `Done in ${secs(ms)}`,
+          });
         }
 
-        const historyId = await db.history.add({
-          request_id: request.id,
+        await record({
+          requestId: request.id,
           sent: draft.body, // stored with {{vars}} intact, like the editor shows
           received,
-          execution_time: ms,
+          ms,
+          ok: true,
+          cmd: draft.cmd,
+          url: connection,
+          pack: pack?.name ?? null,
         });
-        await db.requests.decayWeights();
-        await db.requests.bumpWeight(request.id);
-        set((s) => ({
-          // `history` belongs to whatever request is open now — if the user
-          // moved on mid-flight, this entry isn't part of that list
-          history:
-            s.currentRequestId === request.id
-              ? [
-                  {
-                    id: historyId,
-                    timestamp: new Date().toISOString(),
-                    execution_time: ms,
-                  },
-                  ...s.history,
-                ]
-              : s.history,
-          // mirror the weight SQL exactly (decay all, bump the sent one); the
-          // list keeps its order until reloaded, so rows don't jump around
-          // under the cursor mid-session
-          requests: s.requests.map((r) =>
-            r.id === request.id
-              ? { ...r, weight: (decay(r.weight) ?? 0) + 1 }
-              : { ...r, weight: decay(r.weight) },
-          ),
-        }));
       } catch (e) {
         // a cancel rejects the invoke — stop() already owns the status line
         if (superseded()) return;
         const ms = performance.now() - startedAt;
-        if (stillOpen()) set({ requestTime: ms, statusText: `Failed in ${secs(ms)}` });
+        if (stillOpen())
+          set({ requestTime: ms, lastOk: false, statusText: `Failed in ${secs(ms)}` });
         get().showToast(errText(e));
       } finally {
         if (!superseded()) set({ sendingId: null });
@@ -150,12 +260,19 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
             url: draft.url,
             cmd: draft.cmd,
             body: draft.body,
+            emit: draft.emit ? 1 : 0,
           })
           .then(() =>
             set((s) => ({
               requests: s.requests.map((r) =>
                 r.id === request.id
-                  ? { ...r, url: draft.url, cmd: draft.cmd, body: draft.body }
+                  ? {
+                      ...r,
+                      url: draft.url,
+                      cmd: draft.cmd,
+                      body: draft.body,
+                      emit: draft.emit ? 1 : 0,
+                    }
                   : r,
               ),
             })),
@@ -171,7 +288,12 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
       if (!sendId) return;
       void api.cancelTcpRequest(sendId);
       const ms = performance.now() - startedAt;
-      set({ sendingId: null, requestTime: ms, statusText: `Stopped in ${secs(ms)}` });
+      set({
+        sendingId: null,
+        requestTime: ms,
+        lastOk: false,
+        statusText: `Stopped in ${secs(ms)}`,
+      });
     },
   };
 }

@@ -6,6 +6,7 @@ import type { CollectionsSlice } from "./slices/collections";
 import type { EnvSlice } from "./slices/env";
 import type { HistorySlice } from "./slices/history";
 import type { RequestsSlice } from "./slices/requests";
+import type { RunnerSlice } from "./slices/runner";
 import type { SendSlice } from "./slices/send";
 import type { UiSlice } from "./slices/ui";
 
@@ -43,7 +44,8 @@ export type AppStore = UiSlice &
   RequestsSlice &
   EnvSlice &
   HistorySlice &
-  SendSlice;
+  SendSlice &
+  RunnerSlice;
 
 /** Slice factories take these; every slice can reach the whole store via
  *  get(), which is how cross-slice actions (e.g. selecting a request seeding

@@ -37,14 +37,27 @@ export function createCollectionsSlice(set: Set, get: Get): CollectionsSlice {
     ready: false,
 
     init: async () => {
-      const [envPacks, collections, theme] = await Promise.all([
-        db.envPacks.all(),
-        db.collections.all(),
-        db.settings.get("theme"),
-      ]);
+      const [envPacks, collections, theme, timeoutSecs, historyLimit, layout] =
+        await Promise.all([
+          db.envPacks.all(),
+          db.collections.all(),
+          db.settings.get("theme"),
+          db.settings.getNumber("timeout_secs"),
+          db.settings.getNumber("history_limit"),
+          db.settings.get("layout"),
+        ]);
       // main.tsx applied the cached theme pre-render; reconcile with the DB
       if (theme) applyTheme(theme);
-      set({ envPacks, collections, settings: { theme: theme ?? undefined } });
+      set({
+        envPacks,
+        collections,
+        settings: {
+          theme: theme ?? undefined,
+          timeout_secs: timeoutSecs ?? undefined,
+          history_limit: historyLimit ?? undefined,
+          layout: layout === "vertical" ? "vertical" : layout === "horizontal" ? "horizontal" : undefined,
+        },
+      });
 
       const lastCollectionId = await db.settings.getNumber("last_collection_id");
       // the remembered collection may have been deleted since

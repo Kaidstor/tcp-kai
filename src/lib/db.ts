@@ -83,7 +83,7 @@ export const db = {
     /** Most-used first; `weight` is maintained by bumpWeight/decayWeights. */
     byCollection: (collectionId: number) =>
       select<RequestItem>(
-        `SELECT id, collection_id, name, url, cmd, body, weight
+        `SELECT id, collection_id, name, url, cmd, body, weight, emit
            FROM requests
           WHERE collection_id = ?
           ORDER BY weight DESC, name ASC`,
@@ -92,19 +92,22 @@ export const db = {
 
     add: (req: Omit<RequestItem, "id" | "weight">) =>
       insert(
-        `INSERT INTO requests (collection_id, name, url, cmd, body)
-         VALUES (?, ?, ?, ?, ?)`,
-        [req.collection_id, req.name, req.url, req.cmd, req.body],
+        `INSERT INTO requests (collection_id, name, url, cmd, body, emit)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [req.collection_id, req.name, req.url, req.cmd, req.body, req.emit],
       ),
 
     update: (
       id: number,
-      data: Pick<RequestItem, "name" | "url" | "cmd" | "body">,
+      data: Pick<RequestItem, "name" | "url" | "cmd" | "body" | "emit">,
     ) =>
       exec(
-        "UPDATE requests SET name = ?, url = ?, cmd = ?, body = ? WHERE id = ?",
-        [data.name, data.url, data.cmd, data.body, id],
+        "UPDATE requests SET name = ?, url = ?, cmd = ?, body = ?, emit = ? WHERE id = ?",
+        [data.name, data.url, data.cmd, data.body, data.emit, id],
       ),
+
+    rename: (id: number, name: string) =>
+      exec("UPDATE requests SET name = ? WHERE id = ?", [name, id]),
 
     remove: (id: number) => exec("DELETE FROM requests WHERE id = ?", [id]),
 
@@ -125,7 +128,7 @@ export const db = {
     /** Payload-free listing for the history dropdown. */
     listByRequest: (requestId: number) =>
       select<HistoryListItem>(
-        `SELECT id, timestamp, execution_time
+        `SELECT id, timestamp, execution_time, ok, pack
            FROM history
           WHERE request_id = ?
           ORDER BY timestamp DESC`,
@@ -135,7 +138,8 @@ export const db = {
     byId: async (id: number): Promise<HistoryEntry | null> =>
       (
         await select<HistoryEntry>(
-          `SELECT id, request_id, sent, received, timestamp, execution_time
+          `SELECT id, request_id, sent, received, timestamp, execution_time,
+                  ok, cmd, url, pack
              FROM history WHERE id = ?`,
           [id],
         )
@@ -145,7 +149,8 @@ export const db = {
     latestByRequest: async (requestId: number): Promise<HistoryEntry | null> =>
       (
         await select<HistoryEntry>(
-          `SELECT id, request_id, sent, received, timestamp, execution_time
+          `SELECT id, request_id, sent, received, timestamp, execution_time,
+                  ok, cmd, url, pack
              FROM history
             WHERE request_id = ?
             ORDER BY timestamp DESC
@@ -156,16 +161,44 @@ export const db = {
 
     add: (entry: Omit<HistoryEntry, "id" | "timestamp">) =>
       insert(
-        `INSERT INTO history (request_id, sent, received, timestamp, execution_time)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO history (request_id, sent, received, timestamp, execution_time,
+                              ok, cmd, url, pack)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.request_id,
           entry.sent,
           entry.received,
           new Date().toISOString(),
           entry.execution_time,
+          entry.ok,
+          entry.cmd,
+          entry.url,
+          entry.pack,
         ],
       ),
+
+    /** Хвост истории сверх лимита; 0 — хранить всё. Возвращает срезанные id,
+     *  чтобы стор мог убрать их из открытого списка без перезагрузки. */
+    prune: async (requestId: number, keep: number): Promise<number[]> => {
+      if (keep <= 0) return [];
+      const stale = await select<{ id: number }>(
+        `SELECT id FROM history
+          WHERE request_id = ?1
+            AND id NOT IN (
+              SELECT id FROM history
+               WHERE request_id = ?1
+               ORDER BY timestamp DESC, id DESC
+               LIMIT ?2
+            )`,
+        [requestId, keep],
+      );
+      if (stale.length === 0) return [];
+      await exec(
+        `DELETE FROM history WHERE id IN (${stale.map(() => "?").join(",")})`,
+        stale.map((r) => r.id),
+      );
+      return stale.map((r) => r.id);
+    },
 
     remove: (id: number) => exec("DELETE FROM history WHERE id = ?", [id]),
   },

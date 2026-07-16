@@ -1,18 +1,35 @@
-// ⌘, — theme picker. Themes are CSS-variable overrides on <html>, so the
-// swatches below are the whole story (see lib/themes.ts).
-import { Check } from "lucide-react";
+// ⌘, — настройки: тема, таймаут ответа, лимит истории, ориентация сплита.
+// Всё живёт в settings-таблице (см. lib/db.ts).
+import { Check, Columns2, Rows2 } from "lucide-react";
 import { useApp } from "../lib/store";
 import { THEMES } from "../lib/themes";
-import { Label, Overlay, cn } from "./ui";
+import { DEFAULT_HISTORY_LIMIT, DEFAULT_TIMEOUT_SECS } from "../lib/types";
+import { Field, Input, Label, Overlay, cn } from "./ui";
 
 export function SettingsDialog() {
   const open = useApp((s) => s.settingsOpen);
   const setOpen = useApp((s) => s.setSettingsOpen);
-  const theme = useApp((s) => s.settings.theme);
+  const settings = useApp((s) => s.settings);
   const setTheme = useApp((s) => s.setTheme);
+  const updateSettings = useApp((s) => s.updateSettings);
 
   if (!open) return null;
-  const current = theme ?? THEMES[0].id;
+  const current = settings.theme ?? THEMES[0].id;
+  const layout = settings.layout ?? "horizontal";
+
+  /** Числовая настройка: пустое поле — вернуться к дефолту. */
+  const numberField = (
+    key: "timeout_secs" | "history_limit",
+    raw: string,
+  ) => {
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      void updateSettings({ [key]: undefined });
+      return;
+    }
+    const n = Number(trimmed);
+    if (Number.isFinite(n) && n >= 0) void updateSettings({ [key]: Math.floor(n) });
+  };
 
   return (
     <Overlay
@@ -59,6 +76,56 @@ export function SettingsDialog() {
               )}
             </button>
           ))}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <Field label={`Таймаут ответа, сек (0 — без лимита)`}>
+            <Input
+              type="number"
+              min={0}
+              placeholder={String(DEFAULT_TIMEOUT_SECS)}
+              defaultValue={settings.timeout_secs ?? ""}
+              onBlur={(e) => numberField("timeout_secs", e.target.value)}
+            />
+          </Field>
+          <Field label={`История на запрос (0 — хранить всё)`}>
+            <Input
+              type="number"
+              min={0}
+              placeholder={String(DEFAULT_HISTORY_LIMIT)}
+              defaultValue={settings.history_limit ?? ""}
+              onBlur={(e) => numberField("history_limit", e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4">
+          <Label>Расположение ответа</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { id: "horizontal", label: "Снизу", icon: Rows2 },
+                { id: "vertical", label: "Справа", icon: Columns2 },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => void updateSettings({ layout: opt.id })}
+                className={cn(
+                  "flex items-center gap-2 rounded-md border p-2 text-[12px] text-zinc-200 transition-colors",
+                  layout === opt.id
+                    ? "border-sky-600 bg-zinc-800"
+                    : "border-zinc-700 hover:bg-zinc-800/60",
+                )}
+              >
+                <opt.icon size={14} className="text-zinc-500" />
+                {opt.label}
+                {layout === opt.id && (
+                  <Check size={13} className="ml-auto shrink-0 text-sky-400" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </Overlay>

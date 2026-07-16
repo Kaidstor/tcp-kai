@@ -223,7 +223,7 @@ export function Kbd({
   return (
     <kbd
       className={cn(
-        "rounded bg-zinc-700 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300",
+        "rounded border border-zinc-700/70 bg-zinc-800/80 px-1.5 py-0.5 font-sans text-[10px] leading-none text-zinc-300",
         className,
       )}
     >

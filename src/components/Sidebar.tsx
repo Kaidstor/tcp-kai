@@ -1,5 +1,5 @@
 // Requests of the open collection, most-used first (see requests.weight).
-import { Plus, Trash2 } from "lucide-react";
+import { ListChecks, Plus, Trash2, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useApp } from "../lib/store";
 import { IconButton, Input, cn } from "./ui";
@@ -12,6 +12,7 @@ export function Sidebar() {
   const deleteRequest = useApp((s) => s.deleteRequest);
   const promptDialog = useApp((s) => s.promptDialog);
   const confirmDialog = useApp((s) => s.confirmDialog);
+  const setRunnerOpen = useApp((s) => s.setRunnerOpen);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -43,9 +44,17 @@ export function Sidebar() {
     <aside className="flex w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <h2 className="text-[13px] font-semibold text-zinc-200">Запросы</h2>
-        <IconButton title="Новый запрос (⌘K)" onClick={addRequest}>
-          <Plus size={14} />
-        </IconButton>
+        <div className="flex items-center gap-0.5">
+          <IconButton
+            title="Прогнать запросы (smoke)"
+            onClick={() => setRunnerOpen(true)}
+          >
+            <ListChecks size={14} />
+          </IconButton>
+          <IconButton title="Новый запрос (⌘K)" onClick={addRequest}>
+            <Plus size={14} />
+          </IconButton>
+        </div>
       </div>
 
       <div className="px-2 pb-2">
@@ -70,6 +79,12 @@ export function Sidebar() {
               onClick={() => void selectRequest(req.id)}
               className="flex-1 truncate py-1.5 pr-7 pl-2 text-left text-[12px] text-zinc-200"
             >
+              {req.emit === 1 && (
+                <Zap
+                  size={10}
+                  className="mr-1 inline-block align-[-1px] text-amber-400"
+                />
+              )}
               {req.name}
               {req.weight ? (
                 <span className="ml-1.5 text-[10px] text-zinc-600">

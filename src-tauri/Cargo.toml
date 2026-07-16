@@ -1,9 +1,12 @@
 [package]
-name = "tcp-client"
-version = "0.1.0"
+name = "tcp-kai"
+# держится в шаге с tauri.conf.json: `tcp-kai --version` берёт версию отсюда
+version = "0.3.16"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+# `cargo run` / `tauri dev` должны брать приложение, а не tcp-kai-cli
+default-run = "tcp-kai"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,8 +14,23 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "tcp_client_lib"
+name = "tcp_kai_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# CLI поверх того же ядра (tcp.rs + app.db). Собирается только с фичей cli,
+# чтобы GUI-сборка не тянула clap и sqlx напрямую:
+#   cargo build --release --features cli --bin tcp-kai-cli
+# Target назван tcp-kai-cli, а не tcp-kai: имя бинаря пакета занято GUI
+# (Contents/MacOS/tcp-kai). Команда для пользователя — `tcp-kai`: симлинк
+# из scripts/install-cli.sh указывает на этот бинарь.
+[[bin]]
+name = "tcp-kai-cli"
+path = "src/bin/tcp-kai-cli/main.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+cli = ["dep:clap", "dep:clap_complete", "dep:sqlx", "dep:dirs"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -26,6 +44,15 @@ tauri-plugin-clipboard-manager = "2.3"
 tauri-plugin-notification = "2.3"
 tauri-plugin-sql = { version = "2.3", features = ["sqlite"] }
 tokio = { version = "1", features = ["full"] }
+# разбор *.contract.ts (импорт cmd-паттернов) — нужен и GUI, и CLI
+regex = "1"
 tauri-plugin-store = "2.2.0"
 tauri-plugin-updater = "2.10"
 tauri-plugin-process = "2.3"
+
+# --- только для CLI (feature `cli`) ---
+clap = { version = "4", features = ["derive", "wrap_help"], optional = true }
+clap_complete = { version = "4", optional = true }
+# та же версия, что уже тянет tauri-plugin-sql, — cargo сведёт их в одну сборку
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"], optional = true }
+dirs = { version = "6", optional = true }

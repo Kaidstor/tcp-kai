@@ -32,6 +32,9 @@ export interface EnvSlice {
   toggleEnvPackScope: (id: number) => Promise<void>;
   /** Applies a pack to the open collection (saving pending edits first). */
   activateEnvPack: (id: number) => Promise<void>;
+  /** Пишет переменную в применённый пак (контекстное меню ответа);
+   *  существующий ключ перезаписывается. */
+  upsertActiveVar: (key: string, value: string) => Promise<void>;
 }
 
 export function createEnvSlice(set: Set, get: Get): EnvSlice {
@@ -139,6 +142,30 @@ export function createEnvSlice(set: Set, get: Get): EnvSlice {
           c.id === collectionId ? { ...c, pack_id: id } : c,
         ),
       }));
+    },
+
+    upsertActiveVar: async (key, value) => {
+      const trimmed = key.trim();
+      if (!trimmed) return;
+      const packId = get().collections.find(
+        (c) => c.id === get().currentCollectionId,
+      )?.pack_id;
+      const pack = get().envPacks.find((p) => p.id === packId);
+      if (!pack) {
+        get().showToast("У коллекции не применён пак переменных", "error");
+        return;
+      }
+      const vars = [
+        ...pack.vars.filter((v) => v.key !== trimmed),
+        { key: trimmed, value },
+      ];
+      await db.envPacks.setVars(pack.id, vars);
+      set((s) => ({
+        envPacks: s.envPacks.map((p) => (p.id === pack.id ? { ...p, vars } : p)),
+        // редактор окружений мог держать этот пак открытым — не расходиться
+        draftVars: s.editingPackId === pack.id ? vars.map((v) => ({ ...v })) : s.draftVars,
+      }));
+      get().showToast(`{{${trimmed}}} сохранена в «${pack.name}»`, "success");
     },
   };
 }

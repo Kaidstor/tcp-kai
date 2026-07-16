@@ -60,7 +60,12 @@ tmp=$(mktemp)
 jq --arg v "$NEW_VER" '.version = $v' src-tauri/tauri.conf.json > "$tmp" \
   && mv "$tmp" src-tauri/tauri.conf.json
 
-git add package.json src-tauri/tauri.conf.json
+# CLI tcp-kai показывает версию из Cargo.toml (clap `version`) — бампаем и его
+# (+ Cargo.lock, чтобы дерево осталось чистым после сборки)
+perl -0pi -e "s/(\[package\][^\[]*?version = \")[^\"]+/\${1}$NEW_VER/s" src-tauri/Cargo.toml
+perl -0pi -e "s/(name = \"tcp-kai\"\nversion = \")[^\"]+/\${1}$NEW_VER/" src-tauri/Cargo.lock
+
+git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "release: ${TAG}"
 
 echo "> Создаём Git-тег $TAG"
@@ -91,7 +96,27 @@ echo "  ✓ Релиз создан"
 if [[ -z "${SKIP_BUILD:-}" ]]; then
   echo "> Устанавливаем deps и собираем…"
   bun install               # или npm install/yarn
-  bunx tauri build --ci --bundles app  # --ci отключает интерактивность, --bundles app пропускает DMG
+
+  echo "> Собираем CLI tcp-kai…"
+  (cd src-tauri && cargo build --release --features cli --bin tcp-kai-cli)
+  # cargo даёт ad-hoc подпись; если приложение подписывается сертификатом —
+  # подписываем CLI тем же, чтобы бандл остался консистентным
+  SIGN_ID=$(jq -r '.bundle.macOS.signingIdentity // empty' src-tauri/tauri.conf.json)
+  if [[ -n "$SIGN_ID" ]]; then
+    codesign --force --sign "$SIGN_ID" src-tauri/target/release/tcp-kai-cli
+  fi
+
+  # CLI едет внутрь .app как sidecar (externalBin) → обновляется вместе с
+  # приложением через updater; команда `tcp-kai` — симлинк в бандл
+  # (scripts/install-cli.sh). externalBin задаём только здесь через --config,
+  # чтобы tauri dev / cargo check не требовали наличия binaries/.
+  TRIPLE=$(rustc -Vv | awk '/^host:/{print $2}')
+  mkdir -p src-tauri/binaries
+  cp src-tauri/target/release/tcp-kai-cli "src-tauri/binaries/tcp-kai-cli-$TRIPLE"
+
+  # --ci отключает интерактивность, --bundles app пропускает DMG
+  bunx tauri build --ci --bundles app \
+    --config '{"bundle":{"externalBin":["binaries/tcp-kai-cli"]}}'
   echo "✔️  Сборка готова"
 else
   echo "> SKIP_BUILD задан — пропускаем стадию сборки."
@@ -101,8 +126,9 @@ fi
 BUNDLE_DIR=src-tauri/target/release/bundle
 
 echo "> Генерируем latest.json..."
-# найдём первый tar.gz архив для подписи
-TAR_ARCHIVE=$(find "$BUNDLE_DIR" -type f -name "*.tar.gz" | head -n1)
+# именно .app.tar.gz: рядом лежит ещё и архив CLI (tcp-kai-cli-*.tar.gz), а
+# updater должен получить приложение — иначе обновление уедет не туда
+TAR_ARCHIVE=$(find "$BUNDLE_DIR" -type f -name "*.app.tar.gz" | head -n1)
 SIG_FILE="$TAR_ARCHIVE.sig"
 # читаем подпись, удаляя переводы строк
 SIG=$(tr -d '\n' < "$SIG_FILE")
@@ -124,6 +150,16 @@ cat > "$BUNDLE_DIR/latest.json" <<EOF
 }
 EOF
 
+if [[ -z "${SKIP_BUILD:-}" ]]; then
+  echo "> Пакуем CLI tcp-kai…"
+  # имя без версии — стабильная ссылка через permalink/latest/downloads/;
+  # внутри архива бинарь лежит под финальным именем команды: tcp-kai
+  CLI_STAGE=$(mktemp -d)
+  cp src-tauri/target/release/tcp-kai-cli "$CLI_STAGE/tcp-kai"
+  tar -czf "$BUNDLE_DIR/tcp-kai-cli-darwin-aarch64.tar.gz" -C "$CLI_STAGE" tcp-kai
+  rm -rf "$CLI_STAGE"
+fi
+
 # добавим в список для upload’а все нужные файлы:
 BUNDLE_DIR=src-tauri/target/release/bundle
 echo "> Собираем список артефактов текущей версии…"
@@ -133,7 +169,7 @@ BUNDLE_FILES=()
 # что содержат номер текущей версии $NEW_VER или latest.json
 while IFS= read -r -d '' file; do
   name="$(basename "$file")"
-  if [[ "$name" == *"$NEW_VER"* ]] || [[ "$name" == "latest.json" ]] || [[ "$name" == *.app.tar.gz ]] || [[ "$name" == *.app.tar.gz.sig ]]; then
+  if [[ "$name" == *"$NEW_VER"* ]] || [[ "$name" == "latest.json" ]] || [[ "$name" == *.app.tar.gz ]] || [[ "$name" == *.app.tar.gz.sig ]] || [[ "$name" == tcp-kai-cli-*.tar.gz ]]; then
     BUNDLE_FILES+=("$file")
   fi
 done < <(find "$BUNDLE_DIR" -type f \( \

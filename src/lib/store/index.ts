@@ -5,6 +5,7 @@ import { createCollectionsSlice } from "./slices/collections";
 import { createEnvSlice } from "./slices/env";
 import { createHistorySlice } from "./slices/history";
 import { createRequestsSlice } from "./slices/requests";
+import { createRunnerSlice } from "./slices/runner";
 import { createSendSlice } from "./slices/send";
 import { createUiSlice } from "./slices/ui";
 import type { AppStore } from "./types";
@@ -16,6 +17,7 @@ export const useApp = create<AppStore>((set, get) => ({
   ...createEnvSlice(set, get),
   ...createHistorySlice(set, get),
   ...createSendSlice(set, get),
+  ...createRunnerSlice(set, get),
 }));
 
 export {

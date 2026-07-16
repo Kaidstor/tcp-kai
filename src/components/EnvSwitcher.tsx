@@ -1,9 +1,10 @@
 // Titlebar pill: which env pack the open collection uses, and a quick switch
 // between the packs available to it.
-import { Check, Settings } from "lucide-react";
+import { Check, Settings, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/shallow";
 import { activePack, useApp, usableEnvPacks } from "../lib/store";
+import { isProdPack } from "../lib/utils";
 import { Kbd, MenuButton, Popover, cn } from "./ui";
 
 export function EnvSwitcher() {
@@ -22,8 +23,19 @@ export function EnvSwitcher() {
       trigger={
         <MenuButton
           onClick={() => setOpen((v) => !v)}
-          title="Пак переменных окружения (⌘E — настроить)"
+          title={
+            isProdPack(active?.name)
+              ? "Боевой стенд — write-паттерны спросят подтверждение (⌘E — настроить)"
+              : "Пак переменных окружения (⌘E — настроить)"
+          }
+          className={cn(
+            isProdPack(active?.name) &&
+              "bg-red-950/70 text-red-400 hover:bg-red-900/60 hover:text-red-300",
+          )}
         >
+          {isProdPack(active?.name) && (
+            <TriangleAlert size={11} className="shrink-0 text-red-400" />
+          )}
           <span className="max-w-[120px] truncate">{active?.name ?? "no ENV"}</span>
         </MenuButton>
       }
@@ -40,7 +52,11 @@ export function EnvSwitcher() {
             "text-left text-[12px] text-zinc-200 hover:bg-zinc-800",
           )}
         >
-          <span className="truncate">{pack.name}</span>
+          <span
+            className={cn("truncate", isProdPack(pack.name) && "text-red-400")}
+          >
+            {pack.name}
+          </span>
           {pack.id === active?.id && (
             <Check size={12} className="shrink-0 text-sky-400" />
           )}
@@ -58,7 +74,7 @@ export function EnvSwitcher() {
       >
         <Settings size={12} />
         <span>Настройки</span>
-        <Kbd className="ml-auto bg-transparent text-zinc-600">⌘E</Kbd>
+        <Kbd className="ml-auto">⌘E</Kbd>
       </button>
     </Popover>
   );

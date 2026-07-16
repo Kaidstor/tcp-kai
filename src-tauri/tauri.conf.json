@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tcp-client",
+  "productName": "tcp-kai",
   "version": "0.3.16",
   "identifier": "com.kaidstor.app",
   "build": {

@@ -33,6 +33,7 @@ export function createHistorySlice(set: Set, get: Get): HistorySlice {
         get().patchDraft({ body: entry.sent, received: entry.received });
         set({
           requestTime: entry.execution_time,
+          lastOk: entry.ok === 1,
           statusText: entry.execution_time
             ? `Completed in ${secs(entry.execution_time)}`
             : "Done",

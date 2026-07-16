@@ -1,16 +1,14 @@
-// New commands module for sending and cancelling TCP requests
-use serde::{Deserialize, Serialize};
-use serde_json::error::Error as SerdeError;
+//! Tauri-обвязка над протоколом (`tcp.rs`): реестр запросов «в полёте», чтобы
+//! их можно было отменить с фронтенда, и сериализация ответа для invoke.
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::State;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::sync::oneshot;
-use tokio::time::timeout;
 
-// Holds active request cancellation senders
+use crate::tcp;
+
+/// Отправители отмены для запросов «в полёте», по request_id с фронтенда.
 pub struct RequestState {
     pub active_requests: HashMap<String, oneshot::Sender<()>>,
 }
@@ -23,233 +21,93 @@ impl RequestState {
     }
 }
 
-// Standard API response format
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ApiResponse {
-    pub ok: bool,
-    pub message: String,
-}
-
-impl ApiResponse {
-    pub fn new(message: String) -> Self {
-        ApiResponse { ok: true, message }
-    }
-    pub fn error(message: String) -> Self {
-        ApiResponse { ok: false, message }
+impl Default for RequestState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl From<std::io::Error> for ApiResponse {
-    fn from(err: std::io::Error) -> Self {
-        ApiResponse::error(err.to_string())
-    }
-}
-
-impl From<serde_json::Error> for ApiResponse {
-    fn from(err: serde_json::Error) -> Self {
-        ApiResponse::error(err.to_string())
-    }
-}
-
-// Helper for connection result or error
-enum ConnectionResult {
-    Stream(TcpStream),
-    Error(ApiResponse),
-}
-
-// Attempt TCP connection with timeout
-async fn establish_connection(connection: String) -> ConnectionResult {
-    let timeout_duration = Duration::from_secs(5);
-    match timeout(timeout_duration, TcpStream::connect(&connection)).await {
-        Ok(Ok(stream)) => {
-            println!("Successfully connected to {}", connection);
-            ConnectionResult::Stream(stream)
-        }
-        Ok(Err(e)) => {
-            println!("Connection I/O error to {}: {}", connection, e);
-            ConnectionResult::Error(ApiResponse::error(format!("TCP connection error: {}", e)))
-        }
-        Err(_) => {
-            let err_msg = format!(
-                "Connection to {} timed out after {:?}",
-                connection, timeout_duration
-            );
-            println!("{}", err_msg);
-            ConnectionResult::Error(ApiResponse::error(err_msg))
-        }
-    }
-}
-
-// Send a TCP request, allowing cancellation via the shared state
+/// Отправляет запрос; параллельный `cancel_tcp_request` с тем же id прерывает
+/// ожидание (соединение при этом роняется вместе с задачей).
+///
+/// `timeout_ms` — лимит ожидания ответа (0 = без лимита, отсутствие =
+/// дефолт из tcp.rs); `emit` — event-паттерн, ответ не ждём.
 #[tauri::command]
 pub async fn send_tcp_request(
     connection: String,
     pattern: String,
     json: String,
     request_id: String,
+    timeout_ms: Option<u64>,
+    emit: Option<bool>,
     state: State<'_, Arc<Mutex<RequestState>>>,
 ) -> Result<String, String> {
     let (tx, rx) = oneshot::channel();
     {
-        let mut state_guard = state.lock().unwrap();
-        state_guard.active_requests.insert(request_id.clone(), tx);
+        let mut guard = state.lock().unwrap();
+        guard.active_requests.insert(request_id.clone(), tx);
     }
 
-    println!("Connecting to: {}", connection);
+    let opts = tcp::ExchangeOpts {
+        timeout: match timeout_ms {
+            Some(0) => None,
+            Some(ms) => Some(std::time::Duration::from_millis(ms)),
+            None => Some(tcp::DEFAULT_READ_TIMEOUT),
+        },
+        emit: emit.unwrap_or(false),
+        // трассировка кадра — только в dev-сборке: в теле бывают секреты
+        trace: cfg!(debug_assertions),
+    };
 
-    let result = async {
-        // Establish the connection
-        let mut stream = match establish_connection(connection.clone()).await {
-            ConnectionResult::Stream(s) => s,
-            ConnectionResult::Error(err_response) => {
-                // Log the ApiResponse error for debugging
-                println!("Failed to establish connection: {:?}", err_response);
-                return Ok(serde_json::to_string(&err_response).unwrap());
-            }
-        };
-
-        // Parse the json data or use null if empty
-        let data: serde_json::Value = if !json.is_empty() {
-            serde_json::from_str(&json).unwrap_or(serde_json::Value::Null)
-        } else {
-            serde_json::Value::Null
-        };
-
-        // Build the payload using serde_json for proper UTF-8 handling
-        let payload = serde_json::json!({
-            "pattern": pattern,
-            "data": data,
-            "id": "unique_id_12345"
-        });
-        let json_str = serde_json::to_string(&payload).unwrap();
-        println!("Raw TCP command payload: #{}", json_str);
-
-        // NestJS uses string.length (character count), not byte length
-        let length = json_str.chars().count();
-        let serialized = format!("{}#{}", length, json_str);
-        println!("send: {}", serialized);
-
-        if let Err(e) = stream.write_all(serialized.as_bytes()).await {
-            return Ok(serde_json::to_string(&ApiResponse::error(format!(
-                "Failed to send data: {}",
-                e
-            )))
-            .unwrap_or_else(|err: SerdeError| {
-                format!(
-                    r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#,
-                    err
-                )
-            }));
-        }
-        if let Err(e) = stream.flush().await {
-            return Ok(serde_json::to_string(&ApiResponse::error(format!(
-                "Failed to flush stream: {}",
-                e
-            )))
-            .unwrap_or_else(|err: SerdeError| {
-                format!(
-                    r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#,
-                    err
-                )
-            }));
-        }
-
-        let resp = read_full_response(stream).await?;
-        Ok(to_api_response(resp)?)
+    let exchange = async {
+        let response = tcp::exchange(&connection, &pattern, &json, &opts).await?;
+        serde_json::to_string(&response).map_err(|e| e.to_string())
     };
 
     tokio::select! {
         _ = rx => {
-            let mut state_guard = state.lock().unwrap();
-            state_guard.active_requests.remove(&request_id);
+            state.lock().unwrap().active_requests.remove(&request_id);
             Err("Request was cancelled".to_string())
         }
-        res = result => {
-            let mut state_guard = state.lock().unwrap();
-            state_guard.active_requests.remove(&request_id);
-            res
+        result = exchange => {
+            state.lock().unwrap().active_requests.remove(&request_id);
+            result
         }
     }
 }
 
-// Cancel an in-flight TCP request by its ID
+/// Отменяет запрос «в полёте» по его id.
 #[tauri::command]
 pub fn cancel_tcp_request(request_id: String, state: State<'_, Arc<Mutex<RequestState>>>) {
-    let mut state_guard = state.lock().unwrap();
-    if let Some(tx) = state_guard.active_requests.remove(&request_id) {
+    let mut guard = state.lock().unwrap();
+    if let Some(tx) = guard.active_requests.remove(&request_id) {
         let _ = tx.send(());
     }
 }
 
-// Wrap a raw message into ApiResponse JSON
-fn to_api_response(message: String) -> Result<String, String> {
-    Ok(
-        serde_json::to_string(&ApiResponse::new(message)).unwrap_or_else(|err| {
-            format!(
-                r#"{{"ok": false, "message": "Failed to serialize error: {}"}}"#,
-                err
-            )
-        }),
-    )
-}
-
-// Read length prefix until '#' marker
-async fn read_message_length(stream: &mut TcpStream) -> Result<usize, String> {
-    let mut len_str = String::new();
-    let mut buf = [0; 1];
-    loop {
-        stream
-            .read_exact(&mut buf)
-            .await
-            .map_err(|e| e.to_string())?;
-        if buf[0] == b'#' {
-            break;
+/// Разбирает контракт (`*.contract.ts` и т.п.): по пути на диске или по
+/// вставленному содержимому. Путь с ведущим `~` разворачивается в $HOME.
+#[tauri::command]
+pub fn parse_contract(
+    path: Option<String>,
+    text: Option<String>,
+) -> Result<Vec<crate::contract::ContractGroup>, String> {
+    let source = match (path, text) {
+        (Some(p), _) if !p.trim().is_empty() => {
+            let p = p.trim();
+            let expanded = if let Some(rest) = p.strip_prefix("~/") {
+                match std::env::var("HOME") {
+                    Ok(home) => format!("{home}/{rest}"),
+                    Err(_) => p.to_string(),
+                }
+            } else {
+                p.to_string()
+            };
+            std::fs::read_to_string(&expanded)
+                .map_err(|e| format!("не прочитать {expanded}: {e}"))?
         }
-        len_str.push(buf[0] as char);
-    }
-    len_str.parse::<usize>().map_err(|e| e.to_string())
-}
-
-// Read full TCP response - length is in characters, not bytes (NestJS compatibility)
-async fn read_full_response(mut stream: TcpStream) -> Result<String, String> {
-    let char_count = read_message_length(&mut stream).await?;
-    
-    // Read characters one by one since length is in chars, not bytes
-    // UTF-8 characters can be 1-4 bytes each
-    let mut result = String::new();
-    let mut chars_read = 0;
-    
-    while chars_read < char_count {
-        let mut byte = [0u8; 1];
-        stream.read_exact(&mut byte).await.map_err(|e| e.to_string())?;
-        
-        // Determine how many bytes this UTF-8 character needs
-        let first_byte = byte[0];
-        let char_len = if first_byte & 0x80 == 0 {
-            1 // ASCII
-        } else if first_byte & 0xE0 == 0xC0 {
-            2 // 2-byte UTF-8
-        } else if first_byte & 0xF0 == 0xE0 {
-            3 // 3-byte UTF-8
-        } else if first_byte & 0xF8 == 0xF0 {
-            4 // 4-byte UTF-8
-        } else {
-            return Err("Invalid UTF-8 start byte".to_string());
-        };
-        
-        let mut char_bytes = vec![first_byte];
-        if char_len > 1 {
-            let mut remaining = vec![0u8; char_len - 1];
-            stream.read_exact(&mut remaining).await.map_err(|e| e.to_string())?;
-            char_bytes.extend(remaining);
-        }
-        
-        match std::str::from_utf8(&char_bytes) {
-            Ok(s) => result.push_str(s),
-            Err(e) => return Err(format!("Invalid UTF-8 sequence: {}", e)),
-        }
-        chars_read += 1;
-    }
-    
-    Ok(result)
+        (_, Some(t)) if !t.trim().is_empty() => t,
+        _ => return Err("нужен путь к файлу контракта или его содержимое".to_string()),
+    };
+    Ok(crate::contract::parse(&source))
 }

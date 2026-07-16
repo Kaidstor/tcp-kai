@@ -21,6 +21,11 @@ export interface UiSlice {
   toast: Toast | null;
   envConfigOpen: boolean;
   settingsOpen: boolean;
+  /** Диалог импорта контракта; string — предзаполненный путь (drag&drop). */
+  importOpen: boolean;
+  importPath: string;
+  /** Диалог раннера (прогон выбранных запросов коллекции). */
+  runnerOpen: boolean;
   /** Contents of the `settings` table that the UI cares about. */
   settings: AppSettings;
   /** Request-editor height, % of the editor split (20–80). */
@@ -29,9 +34,14 @@ export interface UiSlice {
   setPalette: (palette: PaletteKind | null) => void;
   setEnvConfigOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  openImport: (path?: string) => void;
+  closeImport: () => void;
+  setRunnerOpen: (open: boolean) => void;
   setEditorPct: (pct: number) => void;
   /** Applies the theme immediately and persists it to the settings table. */
   setTheme: (id: string) => Promise<void>;
+  /** Пишет ключи настроек в стор и в settings-таблицу. */
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   showToast: (message: string, kind?: Toast["kind"]) => void;
   /** Opens the in-app confirm dialog; resolves true on confirm, false on
    *  cancel/Esc/backdrop. Replaces window.confirm(), which doesn't block in
@@ -60,13 +70,21 @@ export function createUiSlice(set: Set, get: Get): UiSlice {
     toast: null,
     envConfigOpen: false,
     settingsOpen: false,
+    importOpen: false,
+    importPath: "",
+    runnerOpen: false,
     settings: {},
     editorPct: 50,
 
     setPalette: (palette) => set({ palette }),
     setEnvConfigOpen: (envConfigOpen) => set({ envConfigOpen }),
     setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-    setEditorPct: (pct) => set({ editorPct: Math.min(Math.max(pct, 20), 80) }),
+    openImport: (path) => set({ importOpen: true, importPath: path ?? "" }),
+    closeImport: () => set({ importOpen: false, importPath: "" }),
+    setRunnerOpen: (runnerOpen) => set({ runnerOpen }),
+    // Pane snapping/min-height are enforced in EditorSplit; here we only guard
+    // the raw range so a bad percentage can never escape [0, 100].
+    setEditorPct: (pct) => set({ editorPct: Math.min(Math.max(pct, 0), 100) }),
 
     setTheme: async (id) => {
       applyTheme(id);
@@ -76,6 +94,17 @@ export function createUiSlice(set: Set, get: Get): UiSlice {
       } catch (e) {
         // theme is applied for this session; only the persistence failed
         get().showToast(`Тема не сохранена: ${String(e)}`);
+      }
+    },
+
+    updateSettings: async (patch) => {
+      set({ settings: { ...get().settings, ...patch } });
+      try {
+        for (const [key, value] of Object.entries(patch)) {
+          await db.settings.set(key, value === undefined ? null : String(value));
+        }
+      } catch (e) {
+        get().showToast(`Настройка не сохранена: ${String(e)}`);
       }
     },
 

@@ -5,19 +5,25 @@
 // Typing a name that doesn't exist offers to create it, so "new collection" /
 // "new request" need no separate dialogs. ⌘K on a highlighted collection
 // drills into its actions (open / env / rename / delete).
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   ChevronLeft,
+  Copy,
+  CopyPlus,
   Database,
+  FileInput,
+  ListChecks,
   Pencil,
   Plus,
   Send,
   Settings,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import { fuzzyScore, highlightRuns } from "../lib/fuzzy";
-import { useApp } from "../lib/store";
+import { currentCollection, useApp } from "../lib/store";
 import { Kbd, Overlay, cn } from "./ui";
 
 /** Text with the fuzzy-matched characters highlighted. */
@@ -173,9 +179,7 @@ function Modal({
                   )}
                 </div>
                 {item.hint && (
-                  <Kbd className="shrink-0 bg-transparent text-zinc-600">
-                    {item.hint}
-                  </Kbd>
+                  <Kbd className="shrink-0">{item.hint}</Kbd>
                 )}
               </div>
             );
@@ -208,15 +212,26 @@ export function Palette() {
   const promptDialog = useApp((s) => s.promptDialog);
   const confirmDialog = useApp((s) => s.confirmDialog);
 
+  const renameRequest = useApp((s) => s.renameRequest);
+  const duplicateRequest = useApp((s) => s.duplicateRequest);
+  const deleteRequest = useApp((s) => s.deleteRequest);
+  const openImport = useApp((s) => s.openImport);
+  const setRunnerOpen = useApp((s) => s.setRunnerOpen);
+  const collection0 = useApp(currentCollection);
+  const showToast = useApp((s) => s.showToast);
+
   const [query, setQuery] = useState("");
   /** Collection whose action list is open (⌘K drill-in). */
   const [actionsFor, setActionsFor] = useState<number | null>(null);
+  /** Request whose action list is open (⌘K drill-in in the requests palette). */
+  const [requestActionsFor, setRequestActionsFor] = useState<number | null>(null);
 
   // every open starts clean
   useEffect(() => {
     if (!palette) {
       setQuery("");
       setActionsFor(null);
+      setRequestActionsFor(null);
     }
   }, [palette]);
 
@@ -253,6 +268,24 @@ export function Palette() {
               hint: "⌘E",
               action: () => {
                 openEnvConfig();
+                close();
+              },
+            } satisfies Item,
+            {
+              id: "import",
+              title: "Импортировать контракт (*.contract.ts)…",
+              icon: FileInput,
+              action: () => {
+                openImport();
+                close();
+              },
+            } satisfies Item,
+            {
+              id: "runner",
+              title: "Прогнать запросы (smoke)…",
+              icon: ListChecks,
+              action: () => {
+                setRunnerOpen(true);
                 close();
               },
             } satisfies Item,
@@ -370,6 +403,111 @@ export function Palette() {
     );
   }
 
+  // — request actions (⌘K on a request) —
+  const request =
+    requestActionsFor === null
+      ? null
+      : (requests.find((r) => r.id === requestActionsFor) ?? null);
+
+  if (palette === "requests" && request) {
+    const copyCli = () => {
+      // применённый в GUI пак — дефолт CLI, флаг -e не нужен
+      const quote = (s: string) => (/[\s"']/.test(s) ? JSON.stringify(s) : s);
+      const cmd = `tcp-kai ${quote(collection0?.name ?? "")} ${quote(request.name)}`;
+      void writeText(cmd)
+        .then(() => showToast(`${cmd} — в буфере`, "success"))
+        .catch((e: unknown) => showToast(String(e)));
+    };
+
+    const items: Item[] = [
+      {
+        id: "open",
+        title: "Открыть запрос",
+        icon: Send,
+        hint: "↵",
+        action: () => {
+          void selectRequest(request.id);
+          close();
+        },
+      },
+      {
+        id: "rename",
+        title: "Переименовать",
+        icon: Pencil,
+        action: () => {
+          close();
+          void (async () => {
+            const name = await promptDialog({
+              title: "Переименовать запрос",
+              label: "Название",
+              initialValue: request.name,
+              confirmLabel: "Сохранить",
+            });
+            if (name) await renameRequest(request.id, name);
+          })();
+        },
+      },
+      {
+        id: "duplicate",
+        title: "Дублировать",
+        icon: CopyPlus,
+        action: () => {
+          void duplicateRequest(request.id);
+          close();
+        },
+      },
+      {
+        id: "copy-cli",
+        title: "Скопировать CLI-команду",
+        subtitle: `tcp-kai ${collection0?.name ?? ""} ${request.name}`,
+        icon: Copy,
+        action: () => {
+          copyCli();
+          close();
+        },
+      },
+      {
+        id: "delete",
+        title: "Удалить запрос",
+        icon: Trash2,
+        danger: true,
+        action: () => {
+          close();
+          void (async () => {
+            const ok = await confirmDialog({
+              title: "Удаление запроса",
+              message: `Запрос "${request.name}" и вся его история будут удалены без возможности восстановления.`,
+              danger: true,
+            });
+            if (ok) await deleteRequest(request.id);
+          })();
+        },
+      },
+      {
+        id: "back",
+        title: "Назад",
+        icon: ChevronLeft,
+        hint: "esc",
+        action: () => {
+          setRequestActionsFor(null);
+          setQuery("");
+        },
+      },
+    ];
+    return (
+      <Modal
+        placeholder={`${request.name} — действие…`}
+        items={items}
+        query={query}
+        onQuery={setQuery}
+        onClose={() => {
+          setRequestActionsFor(null);
+          setQuery("");
+        }}
+      />
+    );
+  }
+
   // — requests —
   const typed = query.trim();
   const exists = requests.some((r) => r.name.toLowerCase() === typed.toLowerCase());
@@ -379,8 +517,9 @@ export function Palette() {
         id: String(r.id),
         title: r.name,
         subtitle: r.cmd !== r.name ? r.cmd : undefined,
-        icon: Send,
+        icon: r.emit === 1 ? Zap : Send,
         badge: r.id === currentRequestId ? "текущий" : undefined,
+        hint: "⌘K",
         keywords: `${r.name} ${r.cmd}`,
         action: () => {
           void selectRequest(r.id);
@@ -410,6 +549,13 @@ export function Palette() {
       query={query}
       onQuery={setQuery}
       onClose={close}
+      onDrill={(id) => {
+        const requestId = Number(id);
+        if (requests.some((r) => r.id === requestId)) {
+          setRequestActionsFor(requestId);
+          setQuery("");
+        }
+      }}
     />
   );
 }
