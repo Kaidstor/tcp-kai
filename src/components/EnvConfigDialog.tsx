@@ -165,6 +165,36 @@ export function EnvConfigDialog() {
                     </span>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    {/* пара как PendingChangesBar в sql-kai: появляется только
+                        пока есть несохранённые правки */}
+                    {dirty && (
+                      <>
+                        <Button
+                          onClick={resetDraftVars}
+                          title="Вернуть сохранённые значения"
+                        >
+                          <RotateCcw size={12} /> Сбросить
+                        </Button>
+                        <Button
+                          variant="primary"
+                          onClick={() => void saveDraftVars()}
+                        >
+                          <Save size={12} /> Сохранить
+                        </Button>
+                      </>
+                    )}
+                    {!dirty && !applied && collection && (
+                      <Button
+                        variant="primary"
+                        title={`Применить "${pack.name}" к коллекции "${collection.name}"`}
+                        onClick={() => void activateEnvPack(pack.id)}
+                      >
+                        <Check size={12} /> Применить
+                      </Button>
+                    )}
+                    {(dirty || (!applied && collection)) && (
+                      <div className="mx-1 h-4 w-px bg-zinc-800" />
+                    )}
                     <IconButton
                       title={
                         isGlobal
@@ -257,38 +287,6 @@ export function EnvConfigDialog() {
             )}
           </div>
         </div>
-
-        {/* footer: как в остальных диалогах — primary справа */}
-        {pack && (
-          <div className="flex shrink-0 items-center justify-between border-t border-zinc-800 px-4 py-3">
-            <div>
-              {dirty && (
-                <Button onClick={resetDraftVars} title="Вернуть сохранённые значения">
-                  <RotateCcw size={12} /> Сбросить
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {dirty && (
-                <Button onClick={() => void saveDraftVars()}>
-                  <Save size={12} /> Сохранить
-                </Button>
-              )}
-              <Button
-                variant="primary"
-                disabled={applied && !dirty}
-                title={
-                  applied
-                    ? "Этот пак уже применён к коллекции"
-                    : `Применить "${pack.name}" к коллекции "${collection?.name}"`
-                }
-                onClick={() => void activateEnvPack(pack.id)}
-              >
-                <Check size={12} /> {applied ? "Применён" : "Применить"}
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
     </Overlay>
   );
