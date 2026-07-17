@@ -17,6 +17,7 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 import { UpdateToast } from "./components/UpdateToast";
+import { WhatsNewDialog } from "./components/WhatsNewDialog";
 import { Kbd, MenuButton } from "./components/ui";
 import { api } from "./lib/api";
 import { activeVars, currentCollection, useApp } from "./lib/store";
@@ -188,6 +189,7 @@ function App() {
       <RunnerDialog />
       <ConfirmDialog />
       <PromptDialog />
+      <WhatsNewDialog />
     </div>
   );
 }
