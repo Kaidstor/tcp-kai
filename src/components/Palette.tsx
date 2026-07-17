@@ -190,6 +190,18 @@ function Modal({
             </div>
           )}
         </div>
+        {/* Подсказки à la Raycast: относятся к подсвеченному ряду, а не к
+            каждому — поэтому живут в футере, а не бейджем на строках. */}
+        {onDrill && filtered.length > 0 && (
+          <div className="flex items-center justify-end gap-4 border-t border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-500">
+            <span className="flex items-center gap-1.5">
+              Открыть <Kbd>↵</Kbd>
+            </span>
+            <span className="flex items-center gap-1.5">
+              Действия <Kbd>⌘K</Kbd>
+            </span>
+          </div>
+        )}
       </div>
     </Overlay>
   );
@@ -363,7 +375,6 @@ export function Palette() {
           title: c.name,
           icon: Database,
           badge: c.id === currentCollectionId ? "текущая" : undefined,
-          hint: "⌘K",
           action: () => {
             void selectCollection(c.id);
             close();
@@ -519,7 +530,6 @@ export function Palette() {
         subtitle: r.cmd !== r.name ? r.cmd : undefined,
         icon: r.emit === 1 ? Zap : Send,
         badge: r.id === currentRequestId ? "текущий" : undefined,
-        hint: "⌘K",
         keywords: `${r.name} ${r.cmd}`,
         action: () => {
           void selectRequest(r.id);
