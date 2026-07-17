@@ -109,7 +109,7 @@ export function ImportContractDialog() {
       className="items-start bg-black/60 pt-[10vh]"
     >
       <div className="flex max-h-[78vh] w-[38rem] max-w-[94vw] flex-col rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">
-        <h2 className="mb-1 flex items-center gap-2 text-[14px] font-semibold text-zinc-100">
+        <h2 className="mb-1 flex items-center gap-2 text-[13px] font-semibold text-zinc-100">
           <FileInput size={15} className="text-zinc-500" />
           Импорт контракта → {collection?.name}
         </h2>

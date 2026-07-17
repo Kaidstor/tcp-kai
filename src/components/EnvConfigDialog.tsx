@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/shallow";
@@ -99,36 +100,13 @@ export function EnvConfigDialog() {
     >
       <div className="flex h-[36rem] max-h-[90vh] w-[50rem] max-w-[95vw] flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
         {/* header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 px-4">
-          <h2 className="text-[14px] font-semibold text-zinc-100">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
+          <h2 className="text-[13px] font-semibold text-zinc-100">
             Переменные окружения
           </h2>
-          <div className="flex items-center gap-2">
-            {dirty && (
-              <>
-                <Button onClick={resetDraftVars} title="Вернуть сохранённые значения">
-                  <RotateCcw size={12} /> Сбросить
-                </Button>
-                <Button onClick={() => void saveDraftVars()}>
-                  <Save size={12} /> Сохранить
-                </Button>
-              </>
-            )}
-            {pack && (
-              <Button
-                variant="primary"
-                disabled={applied && !dirty}
-                title={
-                  applied
-                    ? "Этот пак уже применён к коллекции"
-                    : `Применить "${pack.name}" к коллекции "${collection?.name}"`
-                }
-                onClick={() => void activateEnvPack(pack.id)}
-              >
-                <Check size={12} /> {applied ? "Применён" : "Применить"}
-              </Button>
-            )}
-          </div>
+          <IconButton onClick={() => setOpen(false)}>
+            <X size={15} />
+          </IconButton>
         </div>
 
         <div className="flex min-h-0 flex-1">
@@ -153,7 +131,7 @@ export function EnvConfigDialog() {
                   )}
                   <span className="flex-1 truncate">{p.name}</span>
                   {collection?.pack_id === p.id && (
-                    <span className="shrink-0 rounded bg-sky-600 px-1 py-px text-[9px] font-semibold text-white">
+                    <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-1 py-px text-[9px] font-semibold tracking-wide text-sky-400">
                       ACTIVE
                     </span>
                   )}
@@ -261,13 +239,13 @@ export function EnvConfigDialog() {
                 >
                   <Input
                     value={newVar.key}
-                    placeholder="новый key"
+                    placeholder="key"
                     className="font-mono"
                     onChange={(e) => setNewVar({ ...newVar, key: e.target.value })}
                   />
                   <Input
                     value={newVar.value}
-                    placeholder="значение"
+                    placeholder="value"
                     className="font-mono"
                     onChange={(e) => setNewVar({ ...newVar, value: e.target.value })}
                   />
@@ -279,6 +257,38 @@ export function EnvConfigDialog() {
             )}
           </div>
         </div>
+
+        {/* footer: как в остальных диалогах — primary справа */}
+        {pack && (
+          <div className="flex shrink-0 items-center justify-between border-t border-zinc-800 px-4 py-3">
+            <div>
+              {dirty && (
+                <Button onClick={resetDraftVars} title="Вернуть сохранённые значения">
+                  <RotateCcw size={12} /> Сбросить
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {dirty && (
+                <Button onClick={() => void saveDraftVars()}>
+                  <Save size={12} /> Сохранить
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                disabled={applied && !dirty}
+                title={
+                  applied
+                    ? "Этот пак уже применён к коллекции"
+                    : `Применить "${pack.name}" к коллекции "${collection?.name}"`
+                }
+                onClick={() => void activateEnvPack(pack.id)}
+              >
+                <Check size={12} /> {applied ? "Применён" : "Применить"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </Overlay>
   );

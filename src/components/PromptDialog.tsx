@@ -34,7 +34,7 @@ export function PromptDialog() {
         }}
         className="w-[24rem] max-w-[92vw] rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl"
       >
-        <h2 className="mb-3 text-[14px] font-semibold text-zinc-100">
+        <h2 className="mb-3 text-[13px] font-semibold text-zinc-100">
           {prompt.title}
         </h2>
         <Field label={prompt.label}>

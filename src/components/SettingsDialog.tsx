@@ -38,7 +38,7 @@ export function SettingsDialog() {
       className="items-start bg-black/60 pt-[16vh]"
     >
       <div className="w-[26rem] max-w-[92vw] rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">
-        <h2 className="mb-4 text-[14px] font-semibold text-zinc-100">Настройки</h2>
+        <h2 className="mb-4 text-[13px] font-semibold text-zinc-100">Настройки</h2>
 
         <Label>Тема</Label>
         <div className="grid grid-cols-2 gap-2">

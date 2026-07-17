@@ -23,7 +23,7 @@ export function ConfirmDialog() {
       className="items-center bg-black/60"
     >
       <div className="w-[26rem] max-w-[92vw] self-center rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">
-        <h2 className="text-[14px] font-semibold text-zinc-100">{confirm.title}</h2>
+        <h2 className="text-[13px] font-semibold text-zinc-100">{confirm.title}</h2>
         {confirm.message && (
           <p className="mt-2 text-[12px] whitespace-pre-wrap text-zinc-400">
             {confirm.message}
