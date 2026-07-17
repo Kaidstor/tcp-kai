@@ -1,10 +1,9 @@
 // «Что нового» после обновления приложения.
 //
-// Основной путь: перед установкой апдейта updater.ts кладёт {version, notes}
-// в localStorage (notes = поле notes из latest.json — changelog релиза);
-// после перезапуска уже новая версия находит запись и показывает диалог.
-// Fallback — публичный GitLab API релизов: покрывает ручную установку dmg
-// и апдейт с версии, которая ещё не умела откладывать заметки.
+// Триггер — смена версии с прошлого запуска. Содержимое — последние релизы
+// из публичного GitLab API (минимум HISTORY штук, все непросмотренные — с
+// пометкой fresh). Офлайн-fallback: заметки, отложенные апдейтером перед
+// перезапуском ({version, notes} в localStorage, см. updater.ts).
 import { getVersion } from "@tauri-apps/api/app";
 
 const PENDING_KEY = "tcp.pendingWhatsNew";
@@ -12,9 +11,18 @@ const SEEN_KEY = "tcp.lastSeenVersion";
 /** URL-encoded путь проекта — тот же, куда смотрит updater endpoint. */
 const GITLAB_PROJECT = "kaidstor%2Ftcp_client_tauri";
 
+/** Страница всех релизов — для перехода из диалога. */
+export const RELEASES_PAGE_URL =
+  "https://gitlab.com/kaidstor/tcp_client_tauri/-/releases";
+
+/** Сколько версий показывать в диалоге, даже если новых меньше. */
+const HISTORY = 3;
+
 export interface ReleaseNote {
   version: string;
   notes: string;
+  /** Вышла после версии, которую пользователь запускал в прошлый раз. */
+  fresh?: boolean;
 }
 
 /** Откладывает заметки устанавливаемого апдейта до перезапуска. */
@@ -40,11 +48,8 @@ const cmp = (a: string, b: string): number => {
   return 0;
 };
 
-/** Релизы (seen, current] из GitLab — свежие первыми. */
-async function fetchReleaseNotes(
-  seen: string,
-  current: string,
-): Promise<ReleaseNote[]> {
+/** Релизы ≤ current из GitLab, свежие первыми. */
+async function fetchReleases(current: string): Promise<ReleaseNote[]> {
   const res = await fetch(
     `https://gitlab.com/api/v4/projects/${GITLAB_PROJECT}/releases?per_page=20`,
   );
@@ -56,14 +61,13 @@ async function fetchReleaseNotes(
       version: r.tag_name.replace(/^v/, ""),
       notes: r.description ?? "",
     }))
-    .filter((r) => cmp(r.version, seen) > 0 && cmp(r.version, current) <= 0)
-    .sort((a, b) => cmp(b.version, a.version))
-    .slice(0, 10);
+    .filter((r) => cmp(r.version, current) <= 0)
+    .sort((a, b) => cmp(b.version, a.version));
 }
 
 /**
- * Заметки релизов, которые пользователь ещё не видел (пусто, если версия не
- * менялась). Вызывать один раз на старте: помечает текущую версию просмотренной.
+ * Релизы для диалога «Что нового» (пусто — не показывать). Вызывать один раз
+ * на старте: помечает текущую версию просмотренной.
  */
 export async function collectWhatsNew(): Promise<ReleaseNote[]> {
   try {
@@ -81,12 +85,21 @@ export async function collectWhatsNew(): Promise<ReleaseNote[]> {
     // Первый запуск (свежая установка) — нечего рассказывать.
     if (!seen || seen === current) return [];
 
-    if (pending && pending.version === current && pending.notes.trim()) {
-      return [pending];
+    const history = await fetchReleases(current).catch(() => []);
+    if (history.length > 0) {
+      const isFresh = (v: string) => cmp(v, seen) > 0;
+      const freshCount = history.filter((r) => isFresh(r.version)).length;
+      return history
+        .slice(0, Math.max(HISTORY, freshCount))
+        .map((r) => ({ ...r, fresh: isFresh(r.version) }));
     }
-    return await fetchReleaseNotes(seen, current);
+
+    // Без сети: хотя бы отложенные заметки только что вставшей версии.
+    if (pending && pending.version === current && pending.notes.trim()) {
+      return [{ ...pending, fresh: true }];
+    }
+    return [];
   } catch {
-    // без сети / кривой ответ — просто не показываем диалог
     return [];
   }
 }

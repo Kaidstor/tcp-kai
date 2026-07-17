@@ -1,8 +1,13 @@
 // «Что нового» — показывается один раз после обновления приложения:
-// заметки релизов между прошлой запущенной версией и текущей (см. lib/whatsNew).
-import { Sparkles, X } from "lucide-react";
+// последние релизы, непросмотренные помечены бейджем (см. lib/whatsNew).
+import { ExternalLink, Sparkles, X } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
-import { collectWhatsNew, type ReleaseNote } from "../lib/whatsNew";
+import {
+  RELEASES_PAGE_URL,
+  collectWhatsNew,
+  type ReleaseNote,
+} from "../lib/whatsNew";
 import { Button, IconButton, Overlay } from "./ui";
 
 /** Строки changelog'а: "- пункт" → маркер, остальное — абзац. */
@@ -51,18 +56,31 @@ export function WhatsNewDialog() {
           </IconButton>
         </div>
 
-        <div className="selectable max-h-[50vh] space-y-3 overflow-y-auto">
+        <div className="selectable max-h-[50vh] space-y-4 overflow-y-auto pr-1">
           {notes.map((n) => (
             <div key={n.version}>
-              <div className="mb-1 text-[11px] font-semibold text-sky-400">
-                v{n.version}
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-sky-400">
+                  v{n.version}
+                </span>
+                {n.fresh && (
+                  <span className="rounded border border-sky-500/40 bg-sky-500/10 px-1 py-px text-[9px] font-semibold tracking-wide text-sky-400">
+                    НОВОЕ
+                  </span>
+                )}
               </div>
               <NoteLines text={n.notes} />
             </div>
           ))}
         </div>
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-between">
+          <Button
+            title="Открыть страницу релизов в браузере"
+            onClick={() => void openUrl(RELEASES_PAGE_URL)}
+          >
+            <ExternalLink size={12} /> Все релизы
+          </Button>
           <Button variant="primary" onClick={close}>
             Ок
           </Button>
