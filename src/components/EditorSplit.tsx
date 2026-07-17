@@ -18,7 +18,7 @@ import { unwrapReceived } from "../lib/utils";
 import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import { JsonEditor } from "./JsonEditor";
-import { IconButton, cn } from "./ui";
+import { IconButton, Spinner, cn } from "./ui";
 
 /** Default editor share of the split when reset (double-click). */
 const DEFAULT_EDITOR_PCT = 50;
@@ -42,6 +42,7 @@ export function EditorSplit() {
   const setEditorPct = useApp((s) => s.setEditorPct);
   const layout = useApp((s) => s.settings.layout) ?? "horizontal";
   const lastOk = useApp((s) => s.lastOk);
+  const statusText = useApp((s) => s.statusText);
   const showRaw = useApp((s) => s.showRaw);
   const setShowRaw = useApp((s) => s.setShowRaw);
   const vars = useApp(activeVars);
@@ -218,12 +219,23 @@ export function EditorSplit() {
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Тулбар ответа: исход, размер, raw-тумблер, копирование. */}
-        {(draft.received || lastOk !== null) && (
+        {/* Тулбар ответа: исход, размер, статус (бывший статус-бар), raw, копирование. */}
+        {(sending || draft.received || lastOk !== null) && (
           <div className="flex h-6 shrink-0 items-center gap-2 border-b border-zinc-800/60 px-2">
             {badge}
             {size && <span className="text-[10px] text-zinc-600">{size}</span>}
-            <div className="flex-1" />
+            <span
+              title={statusText}
+              className={cn(
+                "flex min-w-0 flex-1 items-center justify-end gap-1.5 truncate text-[10px]",
+                /^(Error|Failed)/.test(statusText)
+                  ? "text-red-400"
+                  : "text-zinc-600",
+              )}
+            >
+              {sending && <Spinner className="size-2.5" />}
+              {statusText !== "Ready" && statusText}
+            </span>
             {unwrapped.isEnvelope && (
               <button
                 onClick={() => setShowRaw(!showRaw)}

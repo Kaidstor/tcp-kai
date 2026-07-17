@@ -1,6 +1,8 @@
 // ⌘, — настройки: тема, таймаут ответа, лимит истории, ориентация сплита.
 // Всё живёт в settings-таблице (см. lib/db.ts).
+import { app } from "@tauri-apps/api";
 import { Check, Columns2, Rows2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useApp } from "../lib/store";
 import { THEMES } from "../lib/themes";
 import { DEFAULT_HISTORY_LIMIT, DEFAULT_TIMEOUT_SECS } from "../lib/types";
@@ -12,6 +14,11 @@ export function SettingsDialog() {
   const settings = useApp((s) => s.settings);
   const setTheme = useApp((s) => s.setTheme);
   const updateSettings = useApp((s) => s.updateSettings);
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    void app.getVersion().then(setVersion).catch(() => setVersion(""));
+  }, []);
 
   if (!open) return null;
   const current = settings.theme ?? THEMES[0].id;
@@ -127,6 +134,13 @@ export function SettingsDialog() {
             ))}
           </div>
         </div>
+
+        {/* версия жила в статус-баре; после его удаления — здесь */}
+        {version && (
+          <div className="mt-4 border-t border-zinc-800 pt-2 text-center font-mono text-[10px] text-zinc-600">
+            tcp-kai v{version}
+          </div>
+        )}
       </div>
     </Overlay>
   );

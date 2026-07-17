@@ -14,7 +14,6 @@ import { RequestBar } from "./components/RequestBar";
 import { RunnerDialog } from "./components/RunnerDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
-import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 import { UpdateToast } from "./components/UpdateToast";
 import { WhatsNewDialog } from "./components/WhatsNewDialog";
@@ -179,7 +178,6 @@ function App() {
         </div>
       )}
 
-      <StatusBar />
       <Toast />
       <UpdateToast />
       <Palette />

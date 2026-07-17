@@ -10,7 +10,7 @@ export function Toast() {
   return (
     <div
       className={cn(
-        "fixed right-3 bottom-9 z-50 max-w-[28rem] rounded-lg px-3 py-1.5",
+        "fixed right-3 bottom-3 z-50 max-w-[28rem] rounded-lg px-3 py-1.5",
         "text-[12px] font-medium shadow-lg ring-1 ring-inset",
         toast.kind === "error"
           ? "bg-red-950 text-red-200 shadow-red-950/40 ring-red-500/30"

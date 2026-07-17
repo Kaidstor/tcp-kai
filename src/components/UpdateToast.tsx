@@ -44,7 +44,7 @@ export function UpdateToast() {
     return (
       <div
         className={cn(
-          "fixed bottom-9 left-3 z-50 flex items-center gap-1.5 rounded-lg px-3 py-1.5",
+          "fixed bottom-3 left-3 z-50 flex items-center gap-1.5 rounded-lg px-3 py-1.5",
           "text-[12px] font-medium shadow-lg ring-1 ring-inset",
           failed
             ? "bg-red-950 text-red-200 shadow-red-950/40 ring-red-500/30"
@@ -80,7 +80,7 @@ export function UpdateToast() {
   return (
     <div
       className={cn(
-        "fixed bottom-9 left-3 z-50 flex items-stretch overflow-hidden rounded-lg",
+        "fixed bottom-3 left-3 z-50 flex items-stretch overflow-hidden rounded-lg",
         "bg-sky-600 text-[12px] font-medium text-white",
         "shadow-lg shadow-sky-950/40 ring-1 ring-inset ring-white/15",
       )}
