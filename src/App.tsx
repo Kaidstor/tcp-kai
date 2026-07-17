@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Database } from "lucide-react";
 import { useEffect } from "react";
@@ -17,8 +18,9 @@ import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 import { UpdateToast } from "./components/UpdateToast";
 import { Kbd, MenuButton } from "./components/ui";
+import { api } from "./lib/api";
 import { activeVars, currentCollection, useApp } from "./lib/store";
-import { initUpdater } from "./lib/updater";
+import { initUpdater, useUpdater } from "./lib/updater";
 
 /** Variables worth showing in the titlebar — the address the request goes to. */
 const PINNED_VARS = ["host", "port"];
@@ -48,6 +50,33 @@ function App() {
     });
     return () => {
       void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Пункты нативного меню (см. set_app_menu в src-tauri/src/lib.rs).
+  useEffect(() => {
+    const unlisteners = [
+      listen("menu://settings", () => useApp.getState().setSettingsOpen(true)),
+      listen("menu://check-updates", () =>
+        void useUpdater.getState().checkForUpdates(true),
+      ),
+      listen("menu://install-cli", async () => {
+        const s = useApp.getState();
+        try {
+          const path = await api.installCli();
+          s.showToast(
+            `CLI установлен: ${path}\nОткройте новый терминал и проверьте: tcp-kai -V`,
+            "success",
+          );
+        } catch (e) {
+          const msg = String(e);
+          if (msg.includes("cancelled")) return; // отменил диалог пароля
+          s.showToast(`Не удалось установить CLI:\n${msg}`);
+        }
+      }),
+    ];
+    return () => {
+      for (const p of unlisteners) void p.then((fn) => fn());
     };
   }, []);
 

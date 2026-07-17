@@ -14,6 +14,64 @@ pub mod db;
 
 use std::sync::{Arc, Mutex};
 
+/// Нативное меню приложения: Check for Updates / Settings / Install CLI…
+/// Пункты шлют на фронтенд события `menu://<id>` — обработчики в App.tsx.
+/// Edit-меню обязательно: без него в webview на macOS не работают ⌘C/⌘V.
+#[cfg(desktop)]
+fn set_app_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+    use tauri::Emitter;
+
+    let handle = app.handle();
+    let check_updates =
+        MenuItemBuilder::with_id("check-updates", "Check for Updates…").build(handle)?;
+    let settings = MenuItemBuilder::with_id("settings", "Settings…")
+        .accelerator("CmdOrCtrl+,")
+        .build(handle)?;
+    let install_cli =
+        MenuItemBuilder::with_id("install-cli", "Install CLI…").build(handle)?;
+    let app_menu = SubmenuBuilder::new(handle, "tcp-kai")
+        .about(Some(AboutMetadata::default()))
+        .item(&check_updates)
+        .separator()
+        .item(&settings)
+        .item(&install_cli)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    let edit_menu = SubmenuBuilder::new(handle, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let window_menu = SubmenuBuilder::new(handle, "Window")
+        .minimize()
+        .separator()
+        .fullscreen()
+        .build()?;
+    let menu = MenuBuilder::new(handle)
+        .items(&[&app_menu, &edit_menu, &window_menu])
+        .build()?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app, event| {
+        let id = event.id().as_ref();
+        if matches!(id, "settings" | "check-updates" | "install-cli") {
+            let _ = app.emit(&format!("menu://{id}"), ());
+        }
+    });
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Define a single initial migration for final schema
@@ -150,6 +208,7 @@ ALTER TABLE requests ADD COLUMN emit INTEGER NOT NULL DEFAULT 0;
                 app
                     .handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
+                set_app_menu(app)?;
             }
             Ok(())
         })
@@ -166,7 +225,8 @@ ALTER TABLE requests ADD COLUMN emit INTEGER NOT NULL DEFAULT 0;
         .invoke_handler(tauri::generate_handler![
             commands::send_tcp_request,
             commands::cancel_tcp_request,
-            commands::parse_contract
+            commands::parse_contract,
+            commands::install_cli
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

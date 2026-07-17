@@ -25,6 +25,11 @@ export const api = {
    *  вставленному содержимому (см. src-tauri/src/contract.rs). */
   parseContract: (args: { path?: string; text?: string }) =>
     invoke<ContractGroup[]>("parse_contract", args),
+
+  /** Симлинкает CLI-sidecar в /usr/local/bin/tcp-kai; может показать нативный
+   *  диалог администратора. Резолвится в созданный путь; reject "cancelled" —
+   *  пользователь закрыл диалог пароля. */
+  installCli: () => invoke<string>("install_cli"),
 };
 
 /** Parses the ApiResponse envelope the Rust command returns as a string. */

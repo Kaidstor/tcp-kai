@@ -111,3 +111,67 @@ pub fn parse_contract(
     };
     Ok(crate::contract::parse(&source))
 }
+
+/// Устанавливает CLI `tcp-kai` в PATH «как большие» (Zed / VS Code):
+/// симлинкает sidecar `tcp-kai-cli`, лежащий рядом с запущенным приложением,
+/// в `/usr/local/bin/tcp-kai` — тот всегда в PATH через `/etc/paths`. Симлинк
+/// указывает внутрь .app, так что обновления приложения обновляют и CLI.
+/// Сначала пробуем прямой симлинк (писабельный /usr/local/bin, напр.
+/// Homebrew), иначе — нативный диалог администратора (пароль / Touch ID).
+/// Возвращает созданный путь; сентинел-ошибка "cancelled" — пользователь
+/// закрыл диалог авторизации.
+#[tauri::command]
+pub fn install_cli() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::fs::symlink;
+        use std::path::Path;
+
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let src = exe
+            .parent()
+            .map(|p| p.join("tcp-kai-cli"))
+            .ok_or_else(|| "не удалось определить путь к бандлу".to_string())?;
+        if !src.exists() {
+            return Err(format!(
+                "CLI-бинарь не найден рядом с приложением: {}\n\
+                 Нужна сборка tcp-kai со встроенным tcp-kai-cli (sidecar).",
+                src.display()
+            ));
+        }
+        let target = Path::new("/usr/local/bin/tcp-kai");
+
+        // Быстрый путь: каталог писабелен — пересоздаём симлинк без пароля.
+        let _ = std::fs::remove_file(target); // "not found"/"denied" не важны
+        if symlink(&src, target).is_ok() {
+            return Ok(target.display().to_string());
+        }
+
+        // Медленный путь: каталог root-owned. Эскалация через нативный
+        // диалог; `ln -sf` переживает уже существующий root-симлинк.
+        let script = format!(
+            "do shell script \"mkdir -p /usr/local/bin && ln -sf '{}' '{}'\" \
+             with administrator privileges",
+            src.display(),
+            target.display()
+        );
+        let out = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if out.status.success() {
+            return Ok(target.display().to_string());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // -128 == пользователь закрыл диалог авторизации.
+        if stderr.contains("-128") || stderr.contains("User canceled") {
+            return Err("cancelled".to_string());
+        }
+        Err(format!("не удалось создать симлинк: {}", stderr.trim()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Install CLI поддерживается только на macOS".to_string())
+    }
+}
