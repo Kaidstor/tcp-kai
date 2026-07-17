@@ -52,10 +52,6 @@ pub struct SendArgs {
     #[arg(long = "no-history")]
     pub no_history: bool,
 
-    /// Показать, что отправилось бы, и выйти (печатает тело с подстановкой)
-    #[arg(long = "dry-run")]
-    pub dry_run: bool,
-
     /// Лимит ожидания ответа в секундах (0 — ждать вечно)
     #[arg(long = "timeout", value_name = "СЕК", default_value_t = 60)]
     pub timeout: u64,
@@ -181,17 +177,6 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
 
     // event-паттерн: явный --emit или сохранённый флаг запроса из GUI
     let emit = args.emit || request.emit;
-
-    if args.dry_run {
-        println!("{connection} ← {pattern}");
-        let frame = if emit {
-            tcp::build_event_frame(&pattern, &body_sent)
-        } else {
-            tcp::build_frame(&pattern, &body_sent)
-        };
-        println!("{frame}");
-        return Ok(ExitCode::SUCCESS);
-    }
 
     let opts = tcp::ExchangeOpts {
         timeout: (args.timeout > 0).then(|| std::time::Duration::from_secs(args.timeout)),
