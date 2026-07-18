@@ -175,3 +175,34 @@ pub fn install_cli() -> Result<String, String> {
         Err("Install CLI поддерживается только на macOS".to_string())
     }
 }
+
+/// Перезапуск для применения обновления. Штатный relaunch() из plugin-process
+/// спаунит бинарник в обход LaunchServices — на современных macOS такому
+/// процессу отказывают в активации, и новое окно стартует под чужими.
+/// `open -n` запускает бандл как пользовательский, окно поднимается наверх.
+#[tauri::command]
+pub fn relaunch_app(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        // …/tcp-kai.app/Contents/MacOS/tcp-kai → …/tcp-kai.app
+        let bundle = std::env::current_exe().ok().and_then(|exe| {
+            let b = exe.ancestors().nth(3)?;
+            b.extension()
+                .is_some_and(|e| e == "app")
+                .then(|| b.to_path_buf())
+        });
+        if let Some(bundle) = bundle {
+            let spawned = std::process::Command::new("open")
+                .arg("-n")
+                .arg(&bundle)
+                .spawn()
+                .is_ok();
+            if spawned {
+                app.exit(0);
+                return;
+            }
+        }
+    }
+    // Вне бандла (dev-запуск) или не-macOS — обычный рестарт.
+    app.restart();
+}

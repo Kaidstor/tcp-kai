@@ -237,7 +237,8 @@ ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
             commands::send_tcp_request,
             commands::cancel_tcp_request,
             commands::parse_contract,
-            commands::install_cli
+            commands::install_cli,
+            commands::relaunch_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
