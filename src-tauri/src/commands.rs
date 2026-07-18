@@ -59,8 +59,12 @@ pub async fn send_tcp_request(
         trace: cfg!(debug_assertions),
     };
 
+    // через общий с CLI keep-alive-демон (при недоступности — напрямую);
+    // отмена работает как раньше: select дропает future, с ним закрывается
+    // клиентский сокет демона, и тот бросает обмен, не возвращая соединение
+    // в пул
     let exchange = async {
-        let response = tcp::exchange(&connection, &pattern, &json, &opts).await?;
+        let response = crate::daemon::exchange_keepalive(&connection, &pattern, &json, &opts).await?;
         serde_json::to_string(&response).map_err(|e| e.to_string())
     };
 

@@ -8,7 +8,7 @@ use clap::Args;
 use tcp_kai_lib::db::{self, EnvVar};
 use tcp_kai_lib::tcp;
 
-use crate::{sec, vars};
+use crate::{daemon, sec, vars};
 
 #[derive(Args)]
 pub struct SendArgs {
@@ -52,6 +52,10 @@ pub struct SendArgs {
     #[arg(long = "no-history")]
     pub no_history: bool,
 
+    /// Слать напрямую, мимо keep-alive-демона (env: TCP_KAI_NO_DAEMON=1)
+    #[arg(long = "no-daemon")]
+    pub no_daemon: bool,
+
     /// Лимит ожидания ответа в секундах (0 — ждать вечно)
     #[arg(long = "timeout", value_name = "СЕК", default_value_t = 60)]
     pub timeout: u64,
@@ -60,7 +64,8 @@ pub struct SendArgs {
     #[arg(long = "emit")]
     pub emit: bool,
 
-    /// Трассировка кадра в stderr (осторожно: в теле бывают секреты)
+    /// Трассировка кадра в stderr (осторожно: в теле бывают секреты;
+    /// шлёт напрямую, мимо демона — иначе трассу не увидеть)
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,
 }
@@ -184,9 +189,34 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
         trace: args.verbose,
     };
 
+    // keep-alive-демон держит соединения между вызовами CLI; -v идёт напрямую,
+    // чтобы трасса кадра печаталась в этот терминал, а не в никуда у демона
+    let use_daemon = !args.no_daemon
+        && !args.verbose
+        && std::env::var_os("TCP_KAI_NO_DAEMON").map_or(true, |v| v.is_empty());
+
     let started = Instant::now();
-    let response = tcp::exchange(&connection, &pattern, &body_sent, &opts).await?;
-    let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let (response, reused, elapsed_ms) = if use_daemon {
+        match daemon::send(&connection, &pattern, &body_sent, args.timeout, emit).await {
+            Ok(reply) => {
+                let resp = tcp::ApiResponse {
+                    ok: reply.ok,
+                    message: reply.message,
+                };
+                (resp, reply.reused, reply.elapsed_ms)
+            }
+            Err(e) => {
+                eprintln!("tcp-kai: keep-alive-демон недоступен ({e}) — запрос напрямую");
+                let resp = tcp::exchange(&connection, &pattern, &body_sent, &opts).await?;
+                (resp, false, started.elapsed().as_secs_f64() * 1000.0)
+            }
+        }
+    } else {
+        let resp = tcp::exchange(&connection, &pattern, &body_sent, &opts).await?;
+        (resp, false, started.elapsed().as_secs_f64() * 1000.0)
+    };
+    // ⟳ в сводке — ответ пришёл по переиспользованному соединению из пула
+    let reuse_mark = if reused { " ⟳" } else { "" };
 
     let received = format_json(&response.message);
 
@@ -221,7 +251,7 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
 
     if emit {
         eprintln!(
-            "✓ событие ушло · {} · {} · {:.2}s",
+            "✓ событие ушло · {} · {} · {:.2}s{reuse_mark}",
             collection.name,
             pack.map(|p| p.name.as_str()).unwrap_or("без пака"),
             elapsed_ms / 1000.0
@@ -235,7 +265,7 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
     } else {
         println!("{received}");
         eprintln!(
-            "✓ {} · {} · {:.2}s",
+            "✓ {} · {} · {:.2}s{reuse_mark}",
             collection.name,
             pack.map(|p| p.name.as_str()).unwrap_or("без пака"),
             elapsed_ms / 1000.0

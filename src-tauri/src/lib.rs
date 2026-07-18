@@ -5,6 +5,7 @@ use tauri_plugin_updater;
 
 mod commands;
 pub mod contract;
+pub mod daemon;
 pub mod tcp;
 
 // Доступ к app.db из Rust нужен только CLI: у GUI база своя, через plugin-sql

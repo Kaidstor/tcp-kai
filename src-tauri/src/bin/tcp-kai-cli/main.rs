@@ -9,6 +9,7 @@
 //! проект `tcp-kai-<ms>`, инстанс = имя пака.
 
 mod cmd;
+mod daemon;
 mod sec;
 mod vars;
 
@@ -54,6 +55,8 @@ enum Cmd {
     Parse(cmd::parse::ParseArgs),
     /// Последние обмены запроса из общей с GUI истории
     History(cmd::history::HistoryArgs),
+    /// Keep-alive-демон: пул TCP-соединений между вызовами (run/status/stop)
+    Daemon(cmd::daemon::DaemonArgs),
     /// Шелл-дополнения: tcp-kai completions zsh
     Completions {
         /// Шелл: bash, zsh, fish, elvish, powershell
@@ -113,6 +116,7 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, String> {
         Cmd::Import(args) => cmd::import::run(args).await,
         Cmd::Parse(args) => cmd::parse::run(args).await,
         Cmd::History(args) => cmd::history::run(args).await,
+        Cmd::Daemon(args) => cmd::daemon::run(args).await,
         Cmd::Completions { shell } => {
             use clap::CommandFactory;
             let mut command = Cli::command();
