@@ -1,4 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use tauri::Manager;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 use tauri_plugin_process;
 use tauri_plugin_updater;
@@ -214,6 +215,19 @@ ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
+        // Геометрия окна между запусками. Окно в конфиге создаётся скрытым,
+        // плагин восстанавливает размер/позицию до show() в setup — без
+        // прыжка из дефолтной геометрии. FULLSCREEN/DECORATIONS вне флагов
+        // (глючное восстановление нативного fullscreen на macOS).
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -221,6 +235,13 @@ ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
                     .handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 set_app_menu(app)?;
+            }
+            // Окно создано скрытым (visible: false в tauri.conf.json), а
+            // window-state уже восстановил его геометрию — показываем готовое
+            // окно один раз, без прыжка.
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.set_focus();
             }
             Ok(())
         })

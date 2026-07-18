@@ -59,3 +59,4 @@ clap = { version = "4", features = ["derive", "wrap_help"], optional = true }
 clap_complete = { version = "4", optional = true }
 # та же версия, что уже тянет tauri-plugin-sql, — cargo сведёт их в одну сборку
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"], optional = true }
+tauri-plugin-window-state = "2"
