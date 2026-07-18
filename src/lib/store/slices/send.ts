@@ -8,6 +8,7 @@ import {
   DEFAULT_TIMEOUT_SECS,
 } from "../../types";
 import {
+  decayedWeight,
   formatJson,
   isInvalidJsonBody,
   isProdPack,
@@ -38,10 +39,6 @@ export const EMPTY_DRAFT: Draft = {
   received: "",
   emit: false,
 };
-
-/** −10%, matching the SQL in db.requests.decayWeights. */
-const decay = (weight: number | null) =>
-  weight && weight > 0 ? Math.floor((weight * 9) / 10) : weight;
 
 export interface SendSlice {
   draft: Draft;
@@ -91,8 +88,13 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
     });
     const limit = get().settings.history_limit ?? DEFAULT_HISTORY_LIMIT;
     const pruned = await db.history.prune(args.requestId, limit);
-    await db.requests.decayWeights();
-    await db.requests.bumpWeight(args.requestId);
+    // frecency: вес дотаивает за время с прошлой отправки и получает +1;
+    // остальные строки не трогаем — их распад учтёт сортировка при загрузке
+    const now = Date.now();
+    const sent = get().requests.find((r) => r.id === args.requestId);
+    const weight =
+      decayedWeight(sent?.weight ?? null, sent?.last_used_at ?? null, now) + 1;
+    await db.requests.touchWeight(args.requestId, weight, now);
     set((s) => ({
       // `history` belongs to whatever request is open now — if the user
       // moved on mid-flight, this entry isn't part of that list
@@ -109,13 +111,10 @@ export function createSendSlice(set: Set, get: Get): SendSlice {
               ...s.history.filter((h) => !pruned.includes(h.id)),
             ]
           : s.history,
-      // mirror the weight SQL exactly (decay all, bump the sent one); the
-      // list keeps its order until reloaded, so rows don't jump around
+      // the list keeps its order until reloaded, so rows don't jump around
       // under the cursor mid-session
       requests: s.requests.map((r) =>
-        r.id === args.requestId
-          ? { ...r, weight: (decay(r.weight) ?? 0) + 1 }
-          : { ...r, weight: decay(r.weight) },
+        r.id === args.requestId ? { ...r, weight, last_used_at: now } : r,
       ),
     }));
   };

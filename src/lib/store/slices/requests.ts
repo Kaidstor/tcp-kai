@@ -2,7 +2,7 @@
 // and its history — the two always move together, so it happens here.
 import { db } from "../../db";
 import type { RequestItem } from "../../types";
-import { formatJson } from "../../utils";
+import { decayedWeight, formatJson } from "../../utils";
 import type { Get, Set } from "../types";
 
 /** Seeded into every new request — the usual NestJS microservice address,
@@ -37,7 +37,18 @@ export function createRequestsSlice(set: Set, get: Get): RequestsSlice {
     currentRequestId: null,
 
     loadRequests: async (collectionId) => {
-      set({ requests: await db.requests.byCollection(collectionId) });
+      // most-used first: frecency-вес с учётом распада; сортировка здесь,
+      // а не в SQL — pow() есть не во всех сборках SQLite
+      const rows = await db.requests.byCollection(collectionId);
+      const now = Date.now();
+      const score = new Map(
+        rows.map((r) => [r.id, decayedWeight(r.weight, r.last_used_at, now)]),
+      );
+      rows.sort(
+        (a, b) =>
+          score.get(b.id)! - score.get(a.id)! || a.name.localeCompare(b.name),
+      );
+      set({ requests: rows });
     },
 
     selectRequest: async (id) => {
@@ -86,7 +97,12 @@ export function createRequestsSlice(set: Set, get: Get): RequestsSlice {
         emit: 0,
       };
       const id = await db.requests.add(request);
-      set((s) => ({ requests: [...s.requests, { ...request, id, weight: null }] }));
+      set((s) => ({
+        requests: [
+          ...s.requests,
+          { ...request, id, weight: null, last_used_at: null },
+        ],
+      }));
       await get().selectRequest(id);
     },
 
@@ -119,7 +135,10 @@ export function createRequestsSlice(set: Set, get: Get): RequestsSlice {
       };
       const newId = await db.requests.add(request);
       set((s) => ({
-        requests: [...s.requests, { ...request, id: newId, weight: null }],
+        requests: [
+          ...s.requests,
+          { ...request, id: newId, weight: null, last_used_at: null },
+        ],
       }));
       await get().selectRequest(newId);
     },
@@ -156,7 +175,7 @@ export function createRequestsSlice(set: Set, get: Get): RequestsSlice {
           emit: 0,
         };
         const id = await db.requests.add(request);
-        added.push({ ...request, id, weight: null });
+        added.push({ ...request, id, weight: null, last_used_at: null });
         created++;
       }
       if (added.length > 0) {

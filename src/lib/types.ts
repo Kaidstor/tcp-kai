@@ -15,8 +15,10 @@ export interface RequestItem {
   url: string;
   cmd: string;
   body: string;
-  /** Usage counter driving sidebar order; decays on every send. */
+  /** Frecency score driving sidebar order; halves per week idle (see decayedWeight). */
   weight: number | null;
+  /** Момент последней отправки (ms epoch); null — распад ещё не начался. */
+  last_used_at: number | null;
   /** Event-паттерн (@EventPattern): кадр без id, ответ не ожидается. 0/1. */
   emit: number;
 }

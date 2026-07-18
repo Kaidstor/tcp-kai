@@ -24,6 +24,23 @@ export function formatJson(text: string): string {
 /** ms → "1.23s", the unit every status line and history row uses. */
 export const secs = (ms: number): string => `${(ms / 1000).toFixed(2)}s`;
 
+/** Полураспад веса запроса: неделя без использования — вес тает вдвое. */
+export const WEIGHT_HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Frecency-вес на момент `now`. Распад по времени, а не по числу отправок:
+ *  активная сессия с одним запросом не стирает остальных. null last_used_at —
+ *  строки, жившие до v9: вес берётся как есть, распад начнётся с первой отправки. */
+export function decayedWeight(
+  weight: number | null,
+  lastUsedAt: number | null,
+  now: number,
+): number {
+  if (!weight || weight <= 0) return 0;
+  if (lastUsedAt === null) return weight;
+  // max(0, …) — на случай перевода часов назад
+  return weight * 0.5 ** (Math.max(0, now - lastUsedAt) / WEIGHT_HALF_LIFE_MS);
+}
+
 /** Непустое тело, которое не разберётся как JSON: NestJS-кадр молча отправит
  *  `data: null` — GUI спрашивает подтверждение до отправки. */
 export function isInvalidJsonBody(body: string): boolean {

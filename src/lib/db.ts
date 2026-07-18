@@ -80,17 +80,18 @@ export const db = {
   },
 
   requests: {
-    /** Most-used first; `weight` is maintained by bumpWeight/decayWeights. */
+    /** Порядок «частые сверху» считает loadRequests по decayedWeight —
+     *  в SQL для этого понадобился бы pow(), которого нет не во всех сборках. */
     byCollection: (collectionId: number) =>
       select<RequestItem>(
-        `SELECT id, collection_id, name, url, cmd, body, weight, emit
+        `SELECT id, collection_id, name, url, cmd, body, weight, last_used_at, emit
            FROM requests
           WHERE collection_id = ?
-          ORDER BY weight DESC, name ASC`,
+          ORDER BY name ASC`,
         [collectionId],
       ),
 
-    add: (req: Omit<RequestItem, "id" | "weight">) =>
+    add: (req: Omit<RequestItem, "id" | "weight" | "last_used_at">) =>
       insert(
         `INSERT INTO requests (collection_id, name, url, cmd, body, emit)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -111,17 +112,13 @@ export const db = {
 
     remove: (id: number) => exec("DELETE FROM requests WHERE id = ?", [id]),
 
-    /** Sent request climbs the sidebar. */
-    bumpWeight: (id: number) =>
-      exec(
-        "UPDATE requests SET weight = COALESCE(weight, 0) + 1 WHERE id = ?",
-        [id],
-      ),
-
-    /** −10% on every send, so yesterday's favourites drift back down.
-     *  Integer division keeps it portable across SQLite builds. */
-    decayWeights: () =>
-      exec("UPDATE requests SET weight = (weight * 9) / 10 WHERE weight > 0"),
+    /** Отправка: вес уже пересчитан по decayedWeight, пишется одна строка. */
+    touchWeight: (id: number, weight: number, lastUsedAt: number) =>
+      exec("UPDATE requests SET weight = ?, last_used_at = ? WHERE id = ?", [
+        weight,
+        lastUsedAt,
+        id,
+      ]),
   },
 
   history: {

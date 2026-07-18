@@ -2,6 +2,7 @@
 import { ListChecks, Plus, Trash2, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useApp } from "../lib/store";
+import { decayedWeight } from "../lib/utils";
 import { IconButton, Input, cn } from "./ui";
 
 export function Sidebar() {
@@ -21,6 +22,11 @@ export function Sidebar() {
       ? requests.filter((r) => r.name.toLowerCase().includes(q))
       : requests;
   }, [requests, search]);
+
+  // Бейдж показывает вес с учётом распада, целым числом; <1 — прячем.
+  const now = Date.now();
+  const badge = (r: (typeof requests)[number]) =>
+    Math.round(decayedWeight(r.weight, r.last_used_at, now));
 
   const addRequest = async () => {
     const cmd = await promptDialog({
@@ -86,9 +92,9 @@ export function Sidebar() {
                 />
               )}
               {req.name}
-              {req.weight ? (
+              {badge(req) > 0 ? (
                 <span className="ml-1.5 text-[10px] text-zinc-600">
-                  {req.weight}
+                  {badge(req)}
                 </span>
               ) : null}
             </button>

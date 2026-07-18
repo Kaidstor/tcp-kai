@@ -198,6 +198,17 @@ ALTER TABLE requests ADD COLUMN emit INTEGER NOT NULL DEFAULT 0;
             .into(),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "add_last_used_at_to_requests".into(),
+            sql: r#"
+-- Момент последней отправки (ms epoch) — опора half-life-распада веса.
+-- NULL у старых строк: их вес берётся как есть, распад начнётся с первой отправки.
+ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
+"#
+            .into(),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
