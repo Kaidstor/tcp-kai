@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Database } from "lucide-react";
 import { useEffect } from "react";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -24,6 +25,21 @@ import { initUpdater, useUpdater } from "./lib/updater";
 
 /** Variables worth showing in the titlebar — the address the request goes to. */
 const PINNED_VARS = ["host", "port"];
+
+/** Всё, что в шапке кликабельно: по нему тащить нельзя — клик идёт элементу. */
+const INTERACTIVE = "button, a, input, textarea, select, [role='button']";
+
+// `data-tauri-drag-region` срабатывает только когда сам target с атрибутом,
+// поэтому любой вложенный span в шапке гасил бы перетаскивание. Ловим mousedown
+// на всей шапке и решаем сами: попали в интерактив — отдаём клик, иначе тащим
+// окно (двойной клик, как в macOS, зумит).
+function dragWindow(e: React.MouseEvent<HTMLElement>) {
+  if (e.button !== 0) return;
+  if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
+  e.preventDefault();
+  const win = getCurrentWindow();
+  void (e.detail === 2 ? win.toggleMaximize() : win.startDragging());
+}
 
 function App() {
   const init = useApp((s) => s.init);
@@ -121,7 +137,7 @@ function App() {
     <div className="flex h-screen flex-col bg-zinc-950 text-[13px] text-zinc-200 antialiased">
       {/* Titlebar — pl-20 clears the macOS traffic lights (overlay style) */}
       <div
-        data-tauri-drag-region
+        onMouseDown={dragWindow}
         className="flex h-8 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900 pr-2 pl-20"
       >
         <MenuButton
