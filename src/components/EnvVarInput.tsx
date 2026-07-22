@@ -4,7 +4,7 @@
 // same string with the variables coloured — known ones amber, unknown ones
 // underlined red. Both layers must share font, padding and metrics or the
 // caret drifts away from the glyphs.
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { EnvVar } from "../lib/types";
 import { cn } from "./ui";
 
@@ -35,10 +35,11 @@ function activeVar(
   caret: number,
 ): { start: number; end: number; query: string } | null {
   const open = value.lastIndexOf("{{", Math.max(caret - 1, 0));
-  if (open === -1) return null;
+  // каретка слева от самих скобок — внутрь placeholder'а она ещё не зашла
+  if (open === -1 || caret < open + 2) return null;
   const closeBefore = value.indexOf("}}", open);
-  // a `}}` between the braces and the caret means we're past this placeholder
-  if (closeBefore !== -1 && closeBefore + 2 <= caret - 1) return null;
+  // каретка на `}}` или правее — placeholder уже дописан, подсказка не нужна
+  if (closeBefore !== -1 && caret >= closeBefore + 2) return null;
   const end = closeBefore === -1 ? caret : closeBefore + 2;
   const inner = value.slice(open + 2, closeBefore === -1 ? caret : closeBefore);
   return { start: open, end, query: inner };
@@ -58,8 +59,24 @@ export function EnvVarInput({
   className?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const paintRef = useRef<HTMLDivElement>(null);
   const [caret, setCaret] = useState<number | null>(null);
   const [sel, setSel] = useState(0);
+
+  // Значение длиннее поля прокручивает input — слой подсветки обязан ехать
+  // ровно так же, иначе каретка встаёт посреди чужих глифов. scrollLeft
+  // браузер пересчитывает уже после обработчика, поэтому читаем ещё и в
+  // следующем кадре.
+  const syncScroll = () => {
+    const copy = () => {
+      if (inputRef.current && paintRef.current)
+        paintRef.current.scrollLeft = inputRef.current.scrollLeft;
+    };
+    copy();
+    requestAnimationFrame(copy);
+  };
+
+  useLayoutEffect(syncScroll, [value]);
 
   const parts = useMemo(() => segments(value, envVars), [value, envVars]);
 
@@ -84,6 +101,8 @@ export function EnvVarInput({
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(pos, pos);
+      // программный перенос каретки не поднимает onSelect — двигаем слой сами
+      syncScroll();
     });
   };
 
@@ -121,9 +140,14 @@ export function EnvVarInput({
         onChange={(e) => {
           onChange(e.target.value);
           sync(e.target);
+          syncScroll();
           setSel(0);
         }}
-        onSelect={(e) => sync(e.currentTarget)}
+        onSelect={(e) => {
+          sync(e.currentTarget);
+          syncScroll();
+        }}
+        onScroll={syncScroll}
         onFocus={(e) => sync(e.currentTarget)}
         onBlur={() => setCaret(null)}
         onKeyDown={onKeyDown}
@@ -140,31 +164,37 @@ export function EnvVarInput({
         aria-hidden
         className={cn(
           "pointer-events-none absolute inset-0 flex items-center overflow-hidden",
+          // прозрачная рамка повторяет рамку input'а: без неё текст съезжает
+          // на её ширину и каретка не попадает в свои глифы
+          "border border-transparent",
           textLayer,
         )}
       >
-        {parts.map((part, i) =>
-          part.kind === "text" ? (
-            <span key={i} className="text-zinc-100">
-              {part.text}
-            </span>
-          ) : (
-            <span
-              key={i}
-              title={
-                part.value !== undefined
-                  ? `${part.name} = ${part.value}`
-                  : `${part.name} — не задана`
-              }
-              className={cn(
-                "text-amber-400",
-                part.value === undefined && "border-b-2 border-red-500",
-              )}
-            >
-              {part.text}
-            </span>
-          ),
-        )}
+        {/* padding снаружи, прокручивается только текст — как внутри input'а */}
+        <div ref={paintRef} className="min-w-0 flex-1 overflow-hidden">
+          {parts.map((part, i) =>
+            part.kind === "text" ? (
+              <span key={i} className="text-zinc-100">
+                {part.text}
+              </span>
+            ) : (
+              <span
+                key={i}
+                title={
+                  part.value !== undefined
+                    ? `${part.name} = ${part.value}`
+                    : `${part.name} — не задана`
+                }
+                className={cn(
+                  "text-amber-400",
+                  part.value === undefined && "border-b-2 border-red-500",
+                )}
+              >
+                {part.text}
+              </span>
+            ),
+          )}
+        </div>
       </div>
 
       {open && (
