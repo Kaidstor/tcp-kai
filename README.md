@@ -8,7 +8,9 @@
 ## Установка (macOS, Apple Silicon)
 
 1. Скачайте `.dmg` из [последнего релиза](https://gitlab.com/kaidstor/tcp_client_tauri/-/releases/permalink/latest) и перетащите tcp-kai в Applications.
-2. Приложение подписано dev-сертификатом без нотаризации, поэтому первый запуск macOS заблокирует («приложение повреждено» / «не удаётся проверить разработчика»). Обход: System Settings → Privacy & Security → **Open Anyway**, либо снять карантин командой:
+2. Приложение подписано Developer ID и нотаризовано Apple (с v1.3.4) — Gatekeeper не блокирует запуск, но при первом открытии macOS один раз спросит подтверждение («приложение скачано из интернета»): нажмите Open.
+
+   Сборки **до v1.3.4** подписаны dev-сертификатом и не нотаризованы — их macOS блокирует наглухо («приложение повреждено» / «не удаётся проверить разработчика»). Обход: System Settings → Privacy & Security → **Open Anyway**, либо снять карантин командой:
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/tcp-kai.app
@@ -136,8 +138,12 @@ curl -fL https://gitlab.com/kaidstor/tcp_client_tauri/-/releases/permalink/lates
 bun install
 bun run tauri dev     # разработка
 bun run tauri build   # сборка .app/.dmg
-./release.sh          # локальный релиз: бамп версии, сборка, подпись, GitLab-релиз
-                      # (артефакты автообновления + tcp-kai-cli-darwin-aarch64.tar.gz)
+
+# локальный релиз: бамп версии, сборка, подпись, нотаризация, GitLab-релиз
+# (артефакты автообновления + tcp-kai-cli-darwin-aarch64.tar.gz).
+# APPLE_PASSWORD хранится в sec — без него tauri молча пропустит нотаризацию
+# (релизный скрипт это ловит и не даёт опубликовать ненотаризованный бандл)
+sec run tcp-kai --only APPLE_PASSWORD -- ./release.sh
 ```
 
 ## Тесты
