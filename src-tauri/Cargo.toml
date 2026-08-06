@@ -2,8 +2,8 @@
 name = "tcp-kai"
 # держится в шаге с tauri.conf.json: `tcp-kai --version` берёт версию отсюда
 version = "1.3.4"
-description = "A Tauri App"
-authors = ["you"]
+description = "Desktop client for NestJS TCP microservices"
+authors = ["kaidstor"]
 edition = "2021"
 # `cargo run` / `tauri dev` должны брать приложение, а не tcp-kai-cli
 default-run = "tcp-kai"

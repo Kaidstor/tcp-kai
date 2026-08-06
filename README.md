@@ -7,7 +7,17 @@
 
 ## Установка (macOS, Apple Silicon)
 
-1. Скачайте `.dmg` из [последнего релиза](https://gitlab.com/kaidstor/tcp_client_tauri/-/releases/permalink/latest) и перетащите tcp-kai в Applications.
+### Homebrew
+
+```bash
+brew install kaidstor/tap/tcp-kai
+```
+
+Каск ставит приложение и CLI `tcp-kai` в PATH.
+
+### Вручную (.dmg)
+
+1. Скачайте `.dmg` из [последнего релиза](https://github.com/Kaidstor/tcp-kai/releases/latest) и перетащите tcp-kai в Applications.
 2. Приложение подписано Developer ID и нотаризовано Apple (с v1.3.4) — Gatekeeper не блокирует запуск, но при первом открытии macOS один раз спросит подтверждение («приложение скачано из интернета»): нажмите Open.
 
    Сборки **до v1.3.4** подписаны dev-сертификатом и не нотаризованы — их macOS блокирует наглухо («приложение повреждено» / «не удаётся проверить разработчика»). Обход: System Settings → Privacy & Security → **Open Anyway**, либо снять карантин командой:
@@ -16,7 +26,7 @@
    xattr -dr com.apple.quarantine /Applications/tcp-kai.app
    ```
 
-3. Дальше приложение обновляется само: updater качает релизы с GitLab (тост о новой версии, «Check for Updates…» в меню), после обновления показывается «Что нового» с историей версий.
+3. Дальше приложение обновляется само: updater качает релизы с GitHub (тост о новой версии, «Check for Updates…» в меню), после обновления показывается «Что нового» с историей версий. Установленные версии ≤1.3.4 продолжают читать манифест с GitLab — зеркало latest.json там публикуется, пока такие клиенты живы.
 
 CLI `tcp-kai` лежит внутри бандла — пункт меню **tcp-kai → Install CLI…** делает симлинк в PATH, и CLI обновляется вместе с приложением. То же руками — `./scripts/install-cli.sh`.
 
@@ -25,7 +35,7 @@ CLI `tcp-kai` лежит внутри бандла — пункт меню **tcp
 В репозитории есть скилл `tcp-kai` ([skills/tcp-kai/SKILL.md](skills/tcp-kai/SKILL.md)) по спецификации [Agent Skills](https://agentskills.io) — инструкции агенту, как дёргать микросервисы через CLI. Установка (CLI сам спросит, в какого агента и куда — в проект или глобально):
 
 ```bash
-npx skills add https://gitlab.com/kaidstor/tcp_client_tauri --skill tcp-kai
+npx skills add https://github.com/Kaidstor/tcp-kai --skill tcp-kai
 ```
 
 ## Стек
@@ -127,8 +137,8 @@ tcp-kai completions zsh                     # шелл-дополнения
 # из исходников
 cd src-tauri && cargo build --release --features cli --bin tcp-kai-cli
 
-# готовый бинарь из GitLab-релиза (macOS arm64; собирает и грузит release.sh)
-curl -fL https://gitlab.com/kaidstor/tcp_client_tauri/-/releases/permalink/latest/downloads/tcp-kai-cli-darwin-aarch64.tar.gz \
+# готовый бинарь из GitHub-релиза (macOS arm64; собирает и грузит release.sh)
+curl -fL https://github.com/Kaidstor/tcp-kai/releases/latest/download/tcp-kai-cli-darwin-aarch64.tar.gz \
   | tar xz -C /usr/local/bin
 ```
 
@@ -139,11 +149,12 @@ bun install
 bun run tauri dev     # разработка
 bun run tauri build   # сборка .app/.dmg
 
-# локальный релиз: бамп версии, сборка, подпись, нотаризация, GitLab-релиз
-# (артефакты автообновления + tcp-kai-cli-darwin-aarch64.tar.gz).
+# локальный релиз: бамп версии, сборка, подпись, нотаризация, GitHub-релиз
+# (артефакты автообновления + tcp-kai-cli-darwin-aarch64.tar.gz, бамп каска,
+# зеркало latest.json в GitLab для клиентов ≤1.3.4).
 # APPLE_PASSWORD хранится в sec — без него tauri молча пропустит нотаризацию
 # (релизный скрипт это ловит и не даёт опубликовать ненотаризованный бандл)
-sec run tcp-kai --only APPLE_PASSWORD -- ./release.sh
+sec run apple --only APPLE_PASSWORD -- ./release.sh
 ```
 
 ## Тесты

@@ -1,19 +1,18 @@
 // «Что нового» после обновления приложения.
 //
 // Триггер — смена версии с прошлого запуска. Содержимое — последние релизы
-// из публичного GitLab API (минимум HISTORY штук, все непросмотренные — с
+// из публичного GitHub API (минимум HISTORY штук, все непросмотренные — с
 // пометкой fresh). Офлайн-fallback: заметки, отложенные апдейтером перед
 // перезапуском ({version, notes} в localStorage, см. updater.ts).
 import { getVersion } from "@tauri-apps/api/app";
 
 const PENDING_KEY = "tcp.pendingWhatsNew";
 const SEEN_KEY = "tcp.lastSeenVersion";
-/** URL-encoded путь проекта — тот же, куда смотрит updater endpoint. */
-const GITLAB_PROJECT = "kaidstor%2Ftcp_client_tauri";
+/** owner/repo — тот же проект, куда смотрит updater endpoint. */
+const GITHUB_REPO = "Kaidstor/tcp-kai";
 
 /** Страница всех релизов — для перехода из диалога. */
-export const RELEASES_PAGE_URL =
-  "https://gitlab.com/kaidstor/tcp_client_tauri/-/releases";
+export const RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
 /** Сколько версий показывать в диалоге, даже если новых меньше. */
 const HISTORY = 3;
@@ -48,18 +47,18 @@ const cmp = (a: string, b: string): number => {
   return 0;
 };
 
-/** Релизы ≤ current из GitLab, свежие первыми. */
+/** Релизы ≤ current из GitHub, свежие первыми. */
 async function fetchReleases(current: string): Promise<ReleaseNote[]> {
   const res = await fetch(
-    `https://gitlab.com/api/v4/projects/${GITLAB_PROJECT}/releases?per_page=20`,
+    `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20`,
+    { headers: { Accept: "application/vnd.github+json" } },
   );
   if (!res.ok) return [];
-  const releases: { tag_name: string; description?: string }[] =
-    await res.json();
+  const releases: { tag_name: string; body?: string }[] = await res.json();
   return releases
     .map((r) => ({
       version: r.tag_name.replace(/^v/, ""),
-      notes: r.description ?? "",
+      notes: r.body ?? "",
     }))
     .filter((r) => cmp(r.version, current) <= 0)
     .sort((a, b) => cmp(b.version, a.version));
