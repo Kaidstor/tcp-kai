@@ -5,7 +5,8 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::Args;
-use tcp_kai_lib::db::{self, EnvVar};
+use sqlx::SqlitePool;
+use tcp_kai_lib::db::{self, Collection, EnvPack, EnvVar, Request};
 use tcp_kai_lib::tcp;
 
 use crate::{daemon, sec, vars};
@@ -51,6 +52,10 @@ pub struct SendArgs {
     /// Не писать в историю приложения
     #[arg(long = "no-history")]
     pub no_history: bool,
+
+    /// Не заводить запрос, которого нет в коллекции (env: TCP_KAI_NO_CREATE=1)
+    #[arg(long = "no-create")]
+    pub no_create: bool,
 
     /// Слать напрямую, мимо keep-alive-демона (env: TCP_KAI_NO_DAEMON=1)
     #[arg(long = "no-daemon")]
@@ -108,6 +113,63 @@ fn body(args: &SendArgs, saved: Option<&str>) -> Result<String, String> {
     Ok(saved.unwrap_or_default().to_string())
 }
 
+/// Заводит запрос, которого нет в коллекции: `cmd` = имя, которым его позвали,
+/// тело = пришедшее в этот вызов. Дальше вызов идёт обычным путём, поэтому
+/// попадает в историю и поднимает запрос в сайдбаре GUI.
+///
+/// Адрес берём у соседей по коллекции — у них уже принято, живёт он в паке
+/// (`{{host}}:{{port}}`) или прибит гвоздями; `--url` уходит в базу, только
+/// если брать больше неоткуда, иначе стенд одного вызова стал бы постоянным.
+async fn create_request(
+    pool: &SqlitePool,
+    collection: &Collection,
+    siblings: &[Request],
+    pack: Option<&EnvPack>,
+    args: &SendArgs,
+    body_tpl: &str,
+) -> Result<Request, String> {
+    let name = args.request.trim();
+    let has_host = pack.is_some_and(|p| p.vars.iter().any(|v| v.key.eq_ignore_ascii_case("host")));
+    let url = siblings
+        .iter()
+        .find_map(|r| r.url.clone().filter(|u| !u.is_empty()))
+        .or_else(|| has_host.then(|| super::DEFAULT_URL.to_string()))
+        .or_else(|| args.url.clone())
+        .unwrap_or_else(|| super::DEFAULT_URL.to_string());
+    let body = if body_tpl.trim().is_empty() {
+        "{}"
+    } else {
+        body_tpl
+    };
+
+    let id = db::insert_request(
+        pool,
+        &db::NewRequest {
+            collection_id: collection.id,
+            name,
+            url: &url,
+            cmd: name,
+            body,
+            emit: args.emit,
+        },
+    )
+    .await?;
+    eprintln!(
+        "tcp-kai: + запрос «{name}» заведён в коллекции «{}» ({url})",
+        collection.name
+    );
+
+    Ok(Request {
+        id,
+        name: name.to_string(),
+        url: Some(url),
+        cmd: Some(name.to_string()),
+        body: Some(body.to_string()),
+        weight: None,
+        emit: args.emit,
+    })
+}
+
 /// Имена `{{...}}` из строки подключения и тела — что нужно достать из sec.
 fn needed_vars(url: &str, body: &str) -> Vec<String> {
     let mut names = vars::placeholders(url);
@@ -123,9 +185,24 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
     let pool = db::open().await?;
     let collection = super::collection(&pool, &args.collection).await?;
     let requests = db::requests(&pool, collection.id).await?;
-    let request = super::request(&requests, &args.request)?;
     let packs = db::packs(&pool, collection.id).await?;
     let pack = super::pack(&packs, &collection, args.env.as_deref())?;
+
+    // запроса нет — заводим его этим же вызовом: агенту не нужно идти в GUI,
+    // чтобы дёрнуть новый cmd. Ценой того, что опечатка в имени тоже создаст
+    // запрос (а не покажет похожие) — вернуть строгость можно --no-create
+    let strict =
+        args.no_create || std::env::var_os("TCP_KAI_NO_CREATE").is_some_and(|v| !v.is_empty());
+    let existing = match super::request(&requests, &args.request) {
+        Ok(r) => Some(r.clone()),
+        Err(e) if strict => return Err(e),
+        Err(_) => None,
+    };
+    let body_tpl = body(&args, existing.as_ref().and_then(|r| r.body.as_deref()))?;
+    let request = match existing {
+        Some(r) => r,
+        None => create_request(&pool, &collection, &requests, pack, &args, &body_tpl).await?,
+    };
 
     let pattern = request
         .cmd
@@ -138,7 +215,6 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
         .or_else(|| request.url.clone())
         .filter(|u| !u.is_empty())
         .ok_or_else(|| format!("у запроса «{}» не задана строка подключения", request.name))?;
-    let body_tpl = body(&args, request.body.as_deref())?;
 
     // источники переменных, по возрастанию приоритета: пак → sec → --var
     let mut env: Vec<EnvVar> = pack.map(|p| p.vars.clone()).unwrap_or_default();
@@ -168,7 +244,7 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
             None => "у коллекции не выбран пак".to_string(),
         };
         return Err(format!(
-            "строка подключения осталась с {}: {where_from}.\nЗадай их в приложении, через --var или --from-sec",
+            "строка подключения осталась с {}: {where_from}.\nЗадай их в приложении, через --url HOST:PORT, --var или --from-sec",
             unresolved
                 .iter()
                 .map(|n| format!("{{{{{n}}}}}"))

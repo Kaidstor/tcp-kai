@@ -156,28 +156,85 @@ pub async fn requests(pool: &SqlitePool, collection_id: i64) -> Result<Vec<Reque
         .collect())
 }
 
-/// Создаёт запрос — используется импортом контрактов. Возвращает id.
-pub async fn insert_request(
+/// Новый запрос: импорт контракта и автозаведение при отправке.
+pub struct NewRequest<'a> {
+    pub collection_id: i64,
+    pub name: &'a str,
+    pub url: &'a str,
+    pub cmd: &'a str,
+    pub body: &'a str,
+    pub emit: bool,
+}
+
+/// Создаёт запрос. Возвращает id.
+pub async fn insert_request(pool: &SqlitePool, req: &NewRequest<'_>) -> Result<i64, String> {
+    // emit — колонка v8; на старой базе (GUI ещё не мигрировал) вставляем без неё
+    let with_emit = has_column(pool, "requests", "emit").await;
+    let sql = if with_emit {
+        "INSERT INTO requests (collection_id, name, url, cmd, body, emit) VALUES (?, ?, ?, ?, ?, ?)"
+    } else {
+        "INSERT INTO requests (collection_id, name, url, cmd, body) VALUES (?, ?, ?, ?, ?)"
+    };
+    let mut query = sqlx::query(sql)
+        .bind(req.collection_id)
+        .bind(req.name)
+        .bind(req.url)
+        .bind(req.cmd)
+        .bind(req.body);
+    if with_emit {
+        query = query.bind(req.emit as i64);
+    }
+    let id = query
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+    Ok(id)
+}
+
+/// Заводит коллекцию. Имя UNIQUE (миграция 7) — дубль вернётся ошибкой sqlite.
+pub async fn insert_collection(pool: &SqlitePool, name: &str) -> Result<i64, String> {
+    let id = sqlx::query("INSERT INTO collections (name) VALUES (?)")
+        .bind(name)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+    Ok(id)
+}
+
+/// Заводит пак переменных. `collection_id: None` — глобальный.
+pub async fn insert_pack(
+    pool: &SqlitePool,
+    name: &str,
+    vars: &[EnvVar],
+    collection_id: Option<i64>,
+) -> Result<i64, String> {
+    let json = serde_json::to_string(vars).map_err(|e| e.to_string())?;
+    let id = sqlx::query("INSERT INTO env_packs (name, vars, collection_id) VALUES (?, ?, ?)")
+        .bind(name)
+        .bind(json)
+        .bind(collection_id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+    Ok(id)
+}
+
+/// Применяет пак к коллекции — то же, что переключатель стенда в GUI.
+pub async fn set_collection_pack(
     pool: &SqlitePool,
     collection_id: i64,
-    name: &str,
-    url: &str,
-    cmd: &str,
-    body: &str,
-) -> Result<i64, String> {
-    let id = sqlx::query(
-        "INSERT INTO requests (collection_id, name, url, cmd, body) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(collection_id)
-    .bind(name)
-    .bind(url)
-    .bind(cmd)
-    .bind(body)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .last_insert_rowid();
-    Ok(id)
+    pack_id: Option<i64>,
+) -> Result<(), String> {
+    sqlx::query("UPDATE collections SET pack_id = ? WHERE id = ?")
+        .bind(pack_id)
+        .bind(collection_id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Паки, доступные коллекции: глобальные плюс её собственные — тот же отбор,

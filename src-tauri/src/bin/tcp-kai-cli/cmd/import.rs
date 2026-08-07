@@ -6,8 +6,7 @@ use std::process::ExitCode;
 use clap::Args;
 use tcp_kai_lib::{contract, db};
 
-/// URL новых запросов — тот же, что подставляет GUI при создании руками.
-const DEFAULT_URL: &str = "{{host}}:{{port}}";
+use super::DEFAULT_URL;
 
 #[derive(Args)]
 pub struct ImportArgs {
@@ -162,7 +161,18 @@ pub async fn run(args: ImportArgs) -> Result<ExitCode, String> {
     }
 
     for c in &fresh {
-        db::insert_request(&pool, collection.id, &c.value, DEFAULT_URL, &c.value, "{}").await?;
+        db::insert_request(
+            &pool,
+            &db::NewRequest {
+                collection_id: collection.id,
+                name: &c.value,
+                url: DEFAULT_URL,
+                cmd: &c.value,
+                body: "{}",
+                emit: false,
+            },
+        )
+        .await?;
     }
     if fresh.is_empty() {
         println!("создавать нечего");

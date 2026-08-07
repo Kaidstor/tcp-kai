@@ -32,6 +32,7 @@ use clap::{Parser, Subcommand};
         echo '{\"limit\":10}' | tcp-kai whois get-domains --json | jq .\n  \
         tcp-kai fuzzing scan --var port=18099           # разовое значение\n  \
         tcp-kai notifier send --from-sec                # токен из sec, не из базы\n  \
+        tcp-kai new billing --url 127.0.0.1:18011       # новая коллекция со стендом\n  \
         tcp-kai ls                                      # коллекции\n  \
         tcp-kai ls coordinator                          # запросы коллекции\n  \
         tcp-kai envs coordinator                        # паки переменных"
@@ -47,6 +48,8 @@ enum Cmd {
     Send(cmd::send::SendArgs),
     /// Коллекции, или запросы одной коллекции
     Ls(cmd::ls::LsArgs),
+    /// Завести коллекцию (микросервис) с паком переменных
+    New(cmd::new::NewArgs),
     /// Паки переменных, доступные коллекции
     Envs(cmd::envs::EnvsArgs),
     /// Импорт cmd-паттернов из NestJS-контракта в коллекцию
@@ -112,6 +115,7 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, String> {
     match cli.cmd {
         Cmd::Send(args) => cmd::send::run(args).await,
         Cmd::Ls(args) => cmd::ls::run(args).await,
+        Cmd::New(args) => cmd::new::run(args).await,
         Cmd::Envs(args) => cmd::envs::run(args).await,
         Cmd::Import(args) => cmd::import::run(args).await,
         Cmd::Parse(args) => cmd::parse::run(args).await,

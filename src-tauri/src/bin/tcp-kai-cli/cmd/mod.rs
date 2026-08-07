@@ -7,11 +7,16 @@ pub mod envs;
 pub mod history;
 pub mod import;
 pub mod ls;
+pub mod new;
 pub mod parse;
 pub mod send;
 
 use sqlx::SqlitePool;
 use tcp_kai_lib::db::{self, Collection, EnvPack, Request};
+
+/// Строка подключения нового запроса — та же, что подставляет GUI при создании
+/// руками: адрес живёт в паке, а не в каждом запросе.
+pub const DEFAULT_URL: &str = "{{host}}:{{port}}";
 
 /// Длина общего начала — ловит опечатку в хвосте («coordinatr» → «coordinator»),
 /// которую поиск по подстроке пропускает.
@@ -51,7 +56,12 @@ pub async fn collection(pool: &SqlitePool, name: &str) -> Result<Collection, Str
         .find(|c| c.name == name)
         .or_else(|| all.iter().find(|c| c.name.eq_ignore_ascii_case(name)))
         .cloned()
-        .ok_or_else(|| unknown("коллекция", name, all.iter().map(|c| c.name.as_str())))
+        .ok_or_else(|| {
+            format!(
+                "{}\nЗавести: tcp-kai new {name} --url HOST:PORT",
+                unknown("коллекция", name, all.iter().map(|c| c.name.as_str()))
+            )
+        })
 }
 
 /// Запрос по имени или по `cmd` — в палитре приложения ищется и то, и другое.
