@@ -428,7 +428,10 @@ mod tests {
             for _ in 0..frames {
                 let n = socket.read(&mut buf).await.expect("read");
                 let text = String::from_utf8_lossy(&buf[..n]).to_string();
-                let body = text.split_once('#').map(|(_, b)| b.to_string()).unwrap_or_default();
+                let body = text
+                    .split_once('#')
+                    .map(|(_, b)| b.to_string())
+                    .unwrap_or_default();
                 let id = serde_json::from_str::<serde_json::Value>(&body)
                     .ok()
                     .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(str::to_string))
@@ -486,7 +489,10 @@ mod tests {
                 .await
                 .expect("exchange");
             assert!(resp.ok);
-            assert!(conn.reusable(), "чистый обмен не должен отравлять соединение");
+            assert!(
+                conn.reusable(),
+                "чистый обмен не должен отравлять соединение"
+            );
         }
 
         // оба кадра ушли по одному сокету, id разные
@@ -538,7 +544,11 @@ mod tests {
         let mut conn = Connection::open(&addr, false).await.expect("open");
         let resp = conn.exchange("ping", "{}", &opts).await.expect("exchange");
         assert!(!resp.ok);
-        assert!(resp.message.contains("No response within"), "{}", resp.message);
+        assert!(
+            resp.message.contains("No response within"),
+            "{}",
+            resp.message
+        );
         // сервис мог принять запрос в работу: ни в пул, ни на повтор
         assert!(!conn.reusable());
         assert!(!conn.retry_safe());

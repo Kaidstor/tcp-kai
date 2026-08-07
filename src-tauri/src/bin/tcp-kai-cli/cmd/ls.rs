@@ -39,7 +39,11 @@ async fn collections(pool: &sqlx::SqlitePool, json: bool) -> Result<ExitCode, St
         return Ok(ExitCode::SUCCESS);
     }
 
-    let width = rows.iter().map(|r| r.name.chars().count()).max().unwrap_or(0);
+    let width = rows
+        .iter()
+        .map(|r| r.name.chars().count())
+        .max()
+        .unwrap_or(0);
     for r in &rows {
         println!(
             "{:width$}  {:>3}  {}",
@@ -67,7 +71,11 @@ async fn requests(pool: &sqlx::SqlitePool, name: &str, json: bool) -> Result<Exi
         return Ok(ExitCode::SUCCESS);
     }
 
-    let width = rows.iter().map(|r| r.name.chars().count()).max().unwrap_or(0);
+    let width = rows
+        .iter()
+        .map(|r| r.name.chars().count())
+        .max()
+        .unwrap_or(0);
     for r in &rows {
         // cmd показываем, только когда он отличается от имени: в норме они
         // совпадают, и вторая колонка была бы шумом

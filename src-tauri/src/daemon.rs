@@ -69,9 +69,7 @@ fn env_secs(name: &str) -> Option<u64> {
 pub fn default_timings() -> (Duration, Duration) {
     (
         Duration::from_secs(env_secs("TCP_KAI_DAEMON_TTL").unwrap_or(DEFAULT_TTL_SECS)),
-        Duration::from_secs(
-            env_secs("TCP_KAI_DAEMON_IDLE_EXIT").unwrap_or(DEFAULT_IDLE_EXIT_SECS),
-        ),
+        Duration::from_secs(env_secs("TCP_KAI_DAEMON_IDLE_EXIT").unwrap_or(DEFAULT_IDLE_EXIT_SECS)),
     )
 }
 
@@ -267,7 +265,9 @@ async fn handle_client(stream: UnixStream, state: Rc<State>) {
                     loop {
                         match lines.next_line().await {
                             Ok(Some(_)) => {
-                                eprintln!("tcp-kai daemon: запрос поверх незавершённого — игнорирую")
+                                eprintln!(
+                                    "tcp-kai daemon: запрос поверх незавершённого — игнорирую"
+                                )
                             }
                             _ => break,
                         }
@@ -286,8 +286,9 @@ async fn handle_client(stream: UnixStream, state: Rc<State>) {
                 }
             }
         };
-        let mut out = serde_json::to_string(&reply)
-            .unwrap_or_else(|_| r#"{"ok":false,"message":"ответ демона не сериализовался"}"#.into());
+        let mut out = serde_json::to_string(&reply).unwrap_or_else(|_| {
+            r#"{"ok":false,"message":"ответ демона не сериализовался"}"#.into()
+        });
         out.push('\n');
         if write_half.write_all(out.as_bytes()).await.is_err() {
             return;
@@ -376,7 +377,11 @@ fn status(state: &State) -> DaemonReply {
         .iter()
         .filter(|(_, v)| !v.is_empty())
         .map(|(addr, v)| {
-            let oldest = v.iter().map(|i| i.since.elapsed().as_secs()).max().unwrap_or(0);
+            let oldest = v
+                .iter()
+                .map(|i| i.since.elapsed().as_secs())
+                .max()
+                .unwrap_or(0);
             format!("{addr}: свободных {} (старшему {}s)", v.len(), oldest)
         })
         .collect();
@@ -562,9 +567,7 @@ mod tests {
                         let body = text.split_once('#').map(|(_, b)| b).unwrap_or("");
                         let id = serde_json::from_str::<serde_json::Value>(body)
                             .ok()
-                            .and_then(|v| {
-                                v.get("id").and_then(|i| i.as_str()).map(str::to_string)
-                            })
+                            .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(str::to_string))
                             .unwrap_or_default();
                         let envelope = format!(
                             r#"{{"err":null,"response":{{"pong":true}},"isDisposed":true,"id":"{id}"}}"#

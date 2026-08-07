@@ -62,14 +62,20 @@ fn keys(project: &str, env: Option<&str>) -> Result<Vec<String>, String> {
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("sec не найден в PATH ({e}); установи sec или задай TCP_KAI_SEC_BIN"))?;
+        .map_err(|e| {
+            format!("sec не найден в PATH ({e}); установи sec или задай TCP_KAI_SEC_BIN")
+        })?;
 
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err = err.trim();
         return Err(format!(
             "sec ls {project}: {}",
-            if err.is_empty() { "проект не найден" } else { err }
+            if err.is_empty() {
+                "проект не найден"
+            } else {
+                err
+            }
         ));
     }
     let rows: Vec<KeyRow> = serde_json::from_slice(&out.stdout)

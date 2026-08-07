@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 
 use tokio::net::UnixStream;
 
+use tcp_kai_lib::daemon::roundtrip;
 pub use tcp_kai_lib::daemon::{
     call, default_timings, serve, socket_path, DaemonReply, DaemonRequest,
 };
-use tcp_kai_lib::daemon::roundtrip;
 
 /// Обмен через демона — с автоспавном. `Err` — демон недоступен или сломался;
 /// вызывающий уходит на прямое соединение.
@@ -87,9 +87,9 @@ fn spawn_daemon() -> Result<std::process::Child, String> {
             Ok(())
         });
     }
-    let child = cmd.spawn().map_err(|e| format!("не запустить демона: {e}"))?;
-    eprintln!(
-        "tcp-kai: поднял keep-alive-демон (tcp-kai daemon status/stop; обойти: --no-daemon)"
-    );
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("не запустить демона: {e}"))?;
+    eprintln!("tcp-kai: поднял keep-alive-демон (tcp-kai daemon status/stop; обойти: --no-daemon)");
     Ok(child)
 }

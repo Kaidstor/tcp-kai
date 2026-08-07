@@ -44,8 +44,12 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         DaemonCmd::Stop => {
-            match daemon::call(&sock, &daemon::DaemonRequest::Stop, Some(Duration::from_secs(5)))
-                .await
+            match daemon::call(
+                &sock,
+                &daemon::DaemonRequest::Stop,
+                Some(Duration::from_secs(5)),
+            )
+            .await
             {
                 Ok(reply) => eprintln!("{}", reply.message),
                 Err(_) => eprintln!("демон не запущен"),
@@ -53,8 +57,12 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         DaemonCmd::Status => {
-            match daemon::call(&sock, &daemon::DaemonRequest::Status, Some(Duration::from_secs(5)))
-                .await
+            match daemon::call(
+                &sock,
+                &daemon::DaemonRequest::Status,
+                Some(Duration::from_secs(5)),
+            )
+            .await
             {
                 Ok(reply) => println!("{}", reply.message),
                 Err(_) => println!("демон не запущен ({})", sock.display()),

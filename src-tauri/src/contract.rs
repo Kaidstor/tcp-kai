@@ -143,10 +143,7 @@ fn brace_body(text: &str, open: usize) -> Option<String> {
 
 /// Значение паттерна выглядит как cmd, а не как случайная строка контракта.
 fn plausible_cmd(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && !value.contains('\n')
-        && !value.contains("${")
+    !value.is_empty() && value.len() <= 128 && !value.contains('\n') && !value.contains("${")
 }
 
 /// `KEY: 'value'` / `key = 'value'` записи из плоского тела контейнера.
@@ -188,10 +185,8 @@ fn entries(body: &str) -> Vec<ContractCmd> {
 /// `KEY: OtherCmd.KEY` — записи-ссылки из плоского тела контейнера.
 /// Вызовы (`id: z.number()`) отсеиваются по скобке за матчем.
 fn ref_entries(body: &str) -> Vec<ContractRef> {
-    let re = Regex::new(
-        r"([A-Za-z_$][\w$]*)\s*[:=]\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)",
-    )
-    .expect("ref regex");
+    let re = Regex::new(r"([A-Za-z_$][\w$]*)\s*[:=]\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)")
+        .expect("ref regex");
 
     let mut refs = Vec::new();
     for caps in re.captures_iter(body) {
@@ -338,9 +333,7 @@ pub fn parse(source: &str) -> Vec<ContractGroup> {
             let resolved = r
                 .target
                 .rsplit_once('.')
-                .and_then(|(container, key)| {
-                    lookup.get(&(container.to_string(), key.to_string()))
-                })
+                .and_then(|(container, key)| lookup.get(&(container.to_string(), key.to_string())))
                 .cloned();
             match resolved {
                 Some(value) => {
@@ -394,7 +387,11 @@ export const WhoisCmd = {
         let cmd_group = groups.iter().find(|g| g.container == "WhoisCmd").unwrap();
         assert!(cmd_group.is_cmd);
         assert_eq!(
-            cmd_group.cmds.iter().map(|c| c.value.as_str()).collect::<Vec<_>>(),
+            cmd_group
+                .cmds
+                .iter()
+                .map(|c| c.value.as_str())
+                .collect::<Vec<_>>(),
             vec!["lookup", "get-reverse-whois-for-domains"]
         );
         assert_eq!(cmd_group.cmds[0].key, "LOOKUP");
@@ -415,7 +412,10 @@ export const MSNames = {
 };
 "#;
         let groups = parse(src);
-        let screener = groups.iter().find(|g| g.container == "ScreenerCmd").unwrap();
+        let screener = groups
+            .iter()
+            .find(|g| g.container == "ScreenerCmd")
+            .unwrap();
         assert!(screener.is_cmd);
         assert_eq!(screener.cmds.len(), 2);
         assert_eq!(screener.cmds[1].value, "create-screenshot-by-url");
@@ -458,10 +458,22 @@ export class DomainsController {
 }
 "#;
         let groups = parse(src);
-        let patterns = groups.iter().find(|g| g.container == "@MessagePattern").unwrap();
+        let patterns = groups
+            .iter()
+            .find(|g| g.container == "@MessagePattern")
+            .unwrap();
         assert_eq!(
-            patterns.cmds.iter().map(|c| c.value.as_str()).collect::<Vec<_>>(),
-            vec!["get-domains", "remove-domain", "domain-created", "domain-updated"]
+            patterns
+                .cmds
+                .iter()
+                .map(|c| c.value.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "get-domains",
+                "remove-domain",
+                "domain-created",
+                "domain-updated"
+            ]
         );
     }
 
@@ -494,7 +506,10 @@ export const NotifierCmd = {
 } as const;
 "#;
         let groups = parse(src);
-        let notifier = groups.iter().find(|g| g.container == "NotifierCmd").unwrap();
+        let notifier = groups
+            .iter()
+            .find(|g| g.container == "NotifierCmd")
+            .unwrap();
         let values: Vec<&str> = notifier.cmds.iter().map(|c| c.value.as_str()).collect();
         assert!(values.contains(&"notifier-send"));
         assert!(values.contains(&"incidents-get-list"), "{values:?}");

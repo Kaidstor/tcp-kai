@@ -37,7 +37,11 @@ pub async fn run(args: ParseArgs) -> Result<ExitCode, String> {
     }
 
     for g in &groups {
-        let mark = if g.is_cmd { "" } else { "  (не похож на cmd-реестр — импорт пропустит)" };
+        let mark = if g.is_cmd {
+            ""
+        } else {
+            "  (не похож на cmd-реестр — импорт пропустит)"
+        };
         println!("{}{mark}", g.container);
         for c in &g.cmds {
             let dep = if c.deprecated { "  @deprecated" } else { "" };
