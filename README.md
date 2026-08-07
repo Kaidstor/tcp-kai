@@ -32,7 +32,16 @@ CLI `tcp-kai` лежит внутри бандла — пункт меню **tcp
 
 ### Скилл для AI-агентов
 
-В репозитории есть скилл `tcp-kai` ([skills/tcp-kai/SKILL.md](skills/tcp-kai/SKILL.md)) по спецификации [Agent Skills](https://agentskills.io) — инструкции агенту, как дёргать микросервисы через CLI. Установка (CLI сам спросит, в какого агента и куда — в проект или глобально):
+В репозитории есть скилл `tcp-kai` ([skills/tcp-kai/SKILL.md](skills/tcp-kai/SKILL.md)) по спецификации [Agent Skills](https://agentskills.io) — инструкции агенту, как дёргать микросервисы через CLI. Скилл вкомпилирован в бинарь и ставится им же:
+
+```bash
+tcp-kai skills install   # в найденные ~/.claude/skills и ~/.codex/skills
+tcp-kai skills status    # где установлен, какой версии
+```
+
+Дальше копии обновляются сами: Homebrew — постфлайтом каска, апдейт приложения — чеком на старте GUI, любой апгрейд бинаря — первым же `send`. Обновляются только копии, поставленные `skills install` (со стампом `.tcp-kai-version`); симлинки и разложенное руками не трогаются. Для разработки — `tcp-kai skills install --link`: симлинк на рабочее дерево, правка SKILL.md живая сразу.
+
+Альтернатива для установки в проект — [skills CLI](https://agentskills.io) (такая копия обновляться не будет):
 
 ```bash
 npx skills add https://github.com/Kaidstor/tcp-kai --skill tcp-kai

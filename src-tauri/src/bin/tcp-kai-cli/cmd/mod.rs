@@ -10,6 +10,7 @@ pub mod ls;
 pub mod new;
 pub mod parse;
 pub mod send;
+pub mod skills;
 
 use sqlx::SqlitePool;
 use tcp_kai_lib::db::{self, Collection, EnvPack, Request};
@@ -43,10 +44,7 @@ fn unknown<'a>(what: &str, name: &str, candidates: impl Iterator<Item = &'a str>
     if list.is_empty() {
         return format!("{what} «{name}» не найден(а), и других нет");
     }
-    format!(
-        "{what} «{name}» не найден(а). Есть: {}",
-        list.join(", ")
-    )
+    format!("{what} «{name}» не найден(а). Есть: {}", list.join(", "))
 }
 
 /// Коллекция (микросервис) по имени.
@@ -72,9 +70,11 @@ pub fn request<'a>(requests: &'a [Request], name: &str) -> Result<&'a Request, S
         .or_else(|| requests.iter().find(|r| r.cmd.as_deref() == Some(name)))
         .or_else(|| requests.iter().find(|r| r.name.eq_ignore_ascii_case(name)))
         .or_else(|| {
-            requests
-                .iter()
-                .find(|r| r.cmd.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(name)))
+            requests.iter().find(|r| {
+                r.cmd
+                    .as_deref()
+                    .is_some_and(|c| c.eq_ignore_ascii_case(name))
+            })
         })
         .ok_or_else(|| unknown("запрос", name, requests.iter().map(|r| r.name.as_str())))
 }

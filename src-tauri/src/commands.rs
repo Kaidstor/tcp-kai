@@ -64,7 +64,8 @@ pub async fn send_tcp_request(
     // клиентский сокет демона, и тот бросает обмен, не возвращая соединение
     // в пул
     let exchange = async {
-        let response = crate::daemon::exchange_keepalive(&connection, &pattern, &json, &opts).await?;
+        let response =
+            crate::daemon::exchange_keepalive(&connection, &pattern, &json, &opts).await?;
         serde_json::to_string(&response).map_err(|e| e.to_string())
     };
 
@@ -116,6 +117,16 @@ pub fn parse_contract(
     Ok(crate::contract::parse(&source))
 }
 
+/// Вместе с CLI раскладывается и агентский скилл — Install CLI и есть
+/// «подключить tcp-kai агентам». Бест-эффорт: симлинки скилла не трогаются,
+/// ошибки не валят установку самого CLI.
+#[cfg(target_os = "macos")]
+fn install_skills() {
+    for (_, dir) in crate::skills_sync::agent_dirs() {
+        let _ = crate::skills_sync::install(&dir, false);
+    }
+}
+
 /// Устанавливает CLI `tcp-kai` в PATH «как большие» (Zed / VS Code):
 /// симлинкает sidecar `tcp-kai-cli`, лежащий рядом с запущенным приложением,
 /// в `/usr/local/bin/tcp-kai` — тот всегда в PATH через `/etc/paths`. Симлинк
@@ -148,6 +159,7 @@ pub fn install_cli() -> Result<String, String> {
         // Быстрый путь: каталог писабелен — пересоздаём симлинк без пароля.
         let _ = std::fs::remove_file(target); // "not found"/"denied" не важны
         if symlink(&src, target).is_ok() {
+            install_skills();
             return Ok(target.display().to_string());
         }
 
@@ -165,6 +177,7 @@ pub fn install_cli() -> Result<String, String> {
             .output()
             .map_err(|e| e.to_string())?;
         if out.status.success() {
+            install_skills();
             return Ok(target.display().to_string());
         }
         let stderr = String::from_utf8_lossy(&out.stderr);

@@ -60,6 +60,8 @@ enum Cmd {
     History(cmd::history::HistoryArgs),
     /// Keep-alive-демон: пул TCP-соединений между вызовами (run/status/stop)
     Daemon(cmd::daemon::DaemonArgs),
+    /// Агентский скилл tcp-kai: установка в ~/.claude и ~/.codex (install/status)
+    Skills(cmd::skills::SkillsArgs),
     /// Шелл-дополнения: tcp-kai completions zsh
     Completions {
         /// Шелл: bash, zsh, fish, elvish, powershell
@@ -79,8 +81,7 @@ fn preprocess_args() -> Vec<OsString> {
     let known: Vec<String> = command
         .get_subcommands()
         .flat_map(|c| {
-            std::iter::once(c.get_name().to_string())
-                .chain(c.get_all_aliases().map(str::to_string))
+            std::iter::once(c.get_name().to_string()).chain(c.get_all_aliases().map(str::to_string))
         })
         .chain(std::iter::once("help".to_string()))
         .collect();
@@ -113,7 +114,14 @@ fn main() -> ExitCode {
 
 async fn dispatch(cli: Cli) -> Result<ExitCode, String> {
     match cli.cmd {
-        Cmd::Send(args) => cmd::send::run(args).await,
+        Cmd::Send(args) => {
+            let res = cmd::send::run(args).await;
+            // самолечение агентского скилла: апгрейд бинаря (brew, updater,
+            // cargo) догоняет разложенные копии первым же вызовом send.
+            // Только копии со стампом — симлинки и ручные не трогаются
+            tcp_kai_lib::skills_sync::sync_all_stale();
+            res
+        }
         Cmd::Ls(args) => cmd::ls::run(args).await,
         Cmd::New(args) => cmd::new::run(args).await,
         Cmd::Envs(args) => cmd::envs::run(args).await,
@@ -121,6 +129,7 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, String> {
         Cmd::Parse(args) => cmd::parse::run(args).await,
         Cmd::History(args) => cmd::history::run(args).await,
         Cmd::Daemon(args) => cmd::daemon::run(args).await,
+        Cmd::Skills(args) => cmd::skills::run(args),
         Cmd::Completions { shell } => {
             use clap::CommandFactory;
             let mut command = Cli::command();

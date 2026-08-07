@@ -30,7 +30,12 @@ pub struct SendArgs {
     pub data: Option<String>,
 
     /// Тело из файла («-» — stdin)
-    #[arg(short = 'f', long = "file", value_name = "ПУТЬ", conflicts_with = "data")]
+    #[arg(
+        short = 'f',
+        long = "file",
+        value_name = "ПУТЬ",
+        conflicts_with = "data"
+    )]
     pub file: Option<String>,
 
     /// Разовое значение переменной: --var port=18099 (можно несколько)
@@ -221,7 +226,11 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
     if args.from_sec {
         let project = sec::project(&collection.name);
         let needed = needed_vars(&url_tpl, &body_tpl);
-        env.extend(sec::resolve(&project, pack.map(|p| p.name.as_str()), &needed)?);
+        env.extend(sec::resolve(
+            &project,
+            pack.map(|p| p.name.as_str()),
+            &needed,
+        )?);
     }
     for kv in &args.var {
         let (key, value) = kv
@@ -304,7 +313,11 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
         let rec = db::SendRecord {
             request_id: request.id,
             sent: &body_tpl,
-            received: if response.ok { &received } else { &response.message },
+            received: if response.ok {
+                &received
+            } else {
+                &response.message
+            },
             execution_time_ms: elapsed_ms,
             ok: response.ok,
             cmd: &pattern,

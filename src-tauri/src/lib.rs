@@ -1,12 +1,13 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use tauri::Manager;
-use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 use tauri_plugin_process;
+use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 use tauri_plugin_updater;
 
 mod commands;
 pub mod contract;
 pub mod daemon;
+pub mod skills_sync;
 pub mod tcp;
 
 // Доступ к app.db из Rust нужен только CLI: у GUI база своя, через plugin-sql
@@ -30,8 +31,7 @@ fn set_app_menu(app: &tauri::App) -> tauri::Result<()> {
     let settings = MenuItemBuilder::with_id("settings", "Settings…")
         .accelerator("CmdOrCtrl+,")
         .build(handle)?;
-    let install_cli =
-        MenuItemBuilder::with_id("install-cli", "Install CLI…").build(handle)?;
+    let install_cli = MenuItemBuilder::with_id("install-cli", "Install CLI…").build(handle)?;
     let app_menu = SubmenuBuilder::new(handle, "tcp-kai")
         .about(Some(AboutMetadata::default()))
         .item(&check_updates)
@@ -231,8 +231,7 @@ ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
         .setup(|app| {
             #[cfg(desktop)]
             {
-                app
-                    .handle()
+                app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 set_app_menu(app)?;
             }
@@ -243,6 +242,10 @@ ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
                 let _ = win.show();
                 let _ = win.set_focus();
             }
+            // Апдейт через updater = перезапуск новой версией: разложенные
+            // копии агентского скилла догоняют бинарь здесь, даже если CLI
+            // никогда не вызывается.
+            std::thread::spawn(|| skills_sync::sync_all_stale());
             Ok(())
         })
         // Initialize SQL plugin with migrations
