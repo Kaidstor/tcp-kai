@@ -1,8 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use tauri::Manager;
-use tauri_plugin_process;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
-use tauri_plugin_updater;
 
 mod commands;
 pub mod contract;
@@ -80,7 +78,7 @@ pub fn run() {
     let migrations = vec![
         Migration {
             version: 1,
-            description: "initial_schema".into(),
+            description: "initial_schema",
             sql: r#"
 CREATE TABLE IF NOT EXISTS collections (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,13 +105,12 @@ CREATE TABLE IF NOT EXISTS history (
   received TEXT,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 2,
-            description: "add_settings_table".into(),
+            description: "add_settings_table",
             sql: r#"
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -127,51 +124,46 @@ CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
 -- Начальные настройки
 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_collection_id', NULL);
 INSERT OR IGNORE INTO settings (key, value) VALUES ('last_request_id', NULL);
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 3,
-            description: "add_execution_time".into(),
+            description: "add_execution_time",
             sql: r#"
 -- Add execution_time column to history table
 ALTER TABLE history ADD COLUMN execution_time REAL;
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 4,
-            description: "add_collection_id_to_env_packs".into(),
+            description: "add_collection_id_to_env_packs",
             sql: r#"
 -- Add collection_id to env_packs to allow for global or collection-specific packs
 ALTER TABLE env_packs ADD COLUMN collection_id INTEGER REFERENCES collections(id) ON DELETE SET NULL;
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 5,
-            description: "add_received_to_requests".into(),
+            description: "add_received_to_requests",
             sql: r#"
 ALTER TABLE requests ADD COLUMN received TEXT;
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 6,
-            description: "add_weight_to_requests".into(),
+            description: "add_weight_to_requests",
             sql: r#"
 ALTER TABLE requests ADD COLUMN weight INTEGER;
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 7,
-            description: "add_unique_collection_name".into(),
+            description: "add_unique_collection_name",
             sql: r#"
 UPDATE collections
 SET name = name || ' (' || id || ')'
@@ -179,13 +171,12 @@ WHERE id NOT IN (
   SELECT MIN(id) FROM collections GROUP BY name
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_name ON collections(name);
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 8,
-            description: "history_context_and_emit".into(),
+            description: "history_context_and_emit",
             sql: r#"
 -- Контекст обмена на момент отправки: без него запись истории после
 -- переименования cmd или смены пака перестаёт что-либо говорить.
@@ -196,19 +187,17 @@ ALTER TABLE history ADD COLUMN url TEXT;
 ALTER TABLE history ADD COLUMN pack TEXT;
 -- Event-паттерн (@EventPattern): кадр без id, ответ не ожидается.
 ALTER TABLE requests ADD COLUMN emit INTEGER NOT NULL DEFAULT 0;
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 9,
-            description: "add_last_used_at_to_requests".into(),
+            description: "add_last_used_at_to_requests",
             sql: r#"
 -- Момент последней отправки (ms epoch) — опора half-life-распада веса.
 -- NULL у старых строк: их вес берётся как есть, распад начнётся с первой отправки.
 ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
-"#
-            .into(),
+"#,
             kind: MigrationKind::Up,
         },
     ];
@@ -245,7 +234,7 @@ ALTER TABLE requests ADD COLUMN last_used_at INTEGER;
             // Апдейт через updater = перезапуск новой версией: разложенные
             // копии агентского скилла догоняют бинарь здесь, даже если CLI
             // никогда не вызывается.
-            std::thread::spawn(|| skills_sync::sync_all_stale());
+            std::thread::spawn(skills_sync::sync_all_stale);
             Ok(())
         })
         // Initialize SQL plugin with migrations

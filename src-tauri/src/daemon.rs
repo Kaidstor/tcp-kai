@@ -262,15 +262,8 @@ async fn handle_client(stream: UnixStream, state: Rc<State>) {
                 // со следующим). Протокол строго «запрос → ответ», поэтому
                 // строка от клиента во время обмена — мусор, а не сигнал.
                 let disconnect = async {
-                    loop {
-                        match lines.next_line().await {
-                            Ok(Some(_)) => {
-                                eprintln!(
-                                    "tcp-kai daemon: запрос поверх незавершённого — игнорирую"
-                                )
-                            }
-                            _ => break,
-                        }
+                    while let Ok(Some(_)) = lines.next_line().await {
+                        eprintln!("tcp-kai daemon: запрос поверх незавершённого — игнорирую")
                     }
                 };
                 state.in_flight.set(state.in_flight.get() + 1);

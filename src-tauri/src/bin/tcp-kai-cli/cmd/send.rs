@@ -278,7 +278,7 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
     // чтобы трасса кадра печаталась в этот терминал, а не в никуда у демона
     let use_daemon = !args.no_daemon
         && !args.verbose
-        && std::env::var_os("TCP_KAI_NO_DAEMON").map_or(true, |v| v.is_empty());
+        && std::env::var_os("TCP_KAI_NO_DAEMON").is_none_or(|v| v.is_empty());
 
     let started = Instant::now();
     let (response, reused, elapsed_ms) = if use_daemon {
