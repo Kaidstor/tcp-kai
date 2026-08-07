@@ -34,8 +34,10 @@ pub struct InstallArgs {
 
     /// Симлинк на каталог скилла в рабочем дереве вместо копии (dev);
     /// без значения — путь репо, из которого собран бинарь
-    #[arg(long, value_name = "ПУТЬ", num_args = 0..=1, default_missing_value = "")]
-    pub link: Option<PathBuf>,
+    // Option<Option<…>>, а не default_missing_value = "": парсер PathBuf в clap
+    // отвергает пустую строку как «значение не передано», и голый --link падает
+    #[arg(long, value_name = "ПУТЬ")]
+    pub link: Option<Option<PathBuf>>,
 
     /// Заменить и симлинк / чужую копию тоже
     #[arg(long)]
@@ -69,8 +71,8 @@ fn dirs_for(args: &InstallArgs) -> Result<Vec<(&'static str, PathBuf)>, String> 
 fn install(args: &InstallArgs) -> Result<ExitCode, String> {
     let link_target = match &args.link {
         None => None,
-        Some(p) if p.as_os_str().is_empty() => Some(PathBuf::from(sync::REPO_SKILL_DIR)),
-        Some(p) => Some(p.clone()),
+        Some(None) => Some(PathBuf::from(sync::REPO_SKILL_DIR)),
+        Some(Some(p)) => Some(p.clone()),
     };
     if let Some(t) = &link_target {
         if !t.join("SKILL.md").is_file() {
@@ -137,5 +139,35 @@ pub fn run(args: SkillsArgs) -> Result<ExitCode, String> {
     match args.cmd {
         SkillsCmd::Install(a) => install(&a),
         SkillsCmd::Status => Ok(status()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct T {
+        #[command(flatten)]
+        install: InstallArgs,
+    }
+
+    #[test]
+    fn bare_link_means_repo_path() {
+        let t = T::try_parse_from(["t", "--link"]).expect("голый --link должен парситься");
+        assert_eq!(t.install.link, Some(None));
+    }
+
+    #[test]
+    fn link_with_path() {
+        let t = T::try_parse_from(["t", "--link", "/tmp/x"]).unwrap();
+        assert_eq!(t.install.link, Some(Some(PathBuf::from("/tmp/x"))));
+    }
+
+    #[test]
+    fn no_link_by_default() {
+        let t = T::try_parse_from(["t"]).unwrap();
+        assert_eq!(t.install.link, None);
     }
 }
