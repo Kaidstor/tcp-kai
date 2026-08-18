@@ -35,7 +35,10 @@ pub struct Request {
     pub url: Option<String>,
     pub cmd: Option<String>,
     pub body: Option<String>,
-    pub weight: Option<i64>,
+    /// Ранг «самые используемые сверху». GUI пишет сюда дробный вес half-life-
+    /// распада (`utils.ts`), поэтому в NUMERIC-колонке лежат и INTEGER-, и REAL-
+    /// ячейки — читаем как f64 (см. CAST в SELECT ниже).
+    pub weight: Option<f64>,
     pub emit: bool,
 }
 
@@ -132,8 +135,13 @@ pub async fn requests(pool: &SqlitePool, collection_id: i64) -> Result<Vec<Reque
     } else {
         "0 AS emit"
     };
+    // CAST(weight AS REAL): в NUMERIC-колонке уживаются INTEGER- и REAL-ячейки
+    // (GUI пишет дробный вес half-life-распада). sqlx проверяет тип по классу
+    // хранения конкретной ячейки, а не по объявленному типу колонки, и f64
+    // совместим только с REAL — без CAST чтение падает ColumnDecode на любой
+    // целочисленной строке.
     let rows = sqlx::query(&format!(
-        "SELECT id, name, url, cmd, body, weight, {emit_col}
+        "SELECT id, name, url, cmd, body, CAST(weight AS REAL) AS weight, {emit_col}
            FROM requests
           WHERE collection_id = ?
           ORDER BY weight DESC, name ASC",
