@@ -8,9 +8,6 @@ cd "$(dirname "$0")"
 APP_NAME=tcp-kai
 PM=bun
 FORGE=github
-# переходное зеркало latest.json в GitLab — для клиентов ≤1.3.4, чей
-# updater-endpoint ещё смотрит на gitlab.com; убрать через несколько релизов
-GITLAB_LATEST_MIRROR=1
 # автобамп Homebrew-каска (version/sha256 + push tap) после публикации
 BREW_CASK=../homebrew-tap/Casks/tcp-kai.rb
 
