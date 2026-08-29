@@ -562,10 +562,14 @@ mod tests {
                             .ok()
                             .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(str::to_string))
                             .unwrap_or_default();
+                        // 🇷🇺 в теле не для красоты: длина кадра у NestJS — в
+                        // UTF-16 code units, и символ вне BMP стоит два. Держим
+                        // его в моке, чтобы keep-alive-путь ловил рассинхрон
+                        // счётчика так же, как прямое соединение
                         let envelope = format!(
-                            r#"{{"err":null,"response":{{"pong":true}},"isDisposed":true,"id":"{id}"}}"#
+                            r#"{{"err":null,"response":{{"pong":true,"flag":"🇷🇺"}},"isDisposed":true,"id":"{id}"}}"#
                         );
-                        let frame = format!("{}#{}", envelope.chars().count(), envelope);
+                        let frame = format!("{}#{}", envelope.encode_utf16().count(), envelope);
                         if socket.write_all(frame.as_bytes()).await.is_err() {
                             return;
                         }
@@ -663,10 +667,12 @@ mod tests {
             let first = call_send(&sock, &addr).await;
             assert!(first.ok, "{}", first.message);
             assert!(!first.reused, "первый запрос всегда на свежем соединении");
+            assert!(first.message.contains("🇷🇺"), "{}", first.message);
 
             let second = call_send(&sock, &addr).await;
             assert!(second.ok, "{}", second.message);
             assert!(second.reused, "второй запрос должен уйти по пулу");
+            assert!(second.message.contains("🇷🇺"), "{}", second.message);
         })
         .await;
     }

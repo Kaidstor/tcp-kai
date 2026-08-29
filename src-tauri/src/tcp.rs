@@ -97,13 +97,19 @@ fn parse_body(json: &str) -> serde_json::Value {
     }
 }
 
-/// Обрамляет полезную нагрузку длиной. NestJS меряет длину в символах
-/// (`string.length`), а не в байтах, поэтому `chars().count()` — с кириллицей
-/// в теле `len()` разъедется.
+/// Длина кадра в единицах NestJS. `json-socket.js` пишет и читает
+/// `string.length` JS-строки — это UTF-16 code units, а не байты и не символы:
+/// кириллица считается за один, а всё вне BMP (эмодзи, часть CJK) — за два.
+/// Байты разъедутся на любой кириллице, символы — на первом же эмодзи.
+fn utf16_len(s: &str) -> usize {
+    s.chars().map(char::len_utf16).sum()
+}
+
+/// Обрамляет полезную нагрузку длиной.
 fn frame(payload: &serde_json::Value) -> String {
     // json!-объект из строк и Value сериализуется всегда
     let body = serde_json::to_string(payload).expect("serialize payload");
-    format!("{}#{}", body.chars().count(), body)
+    format!("{}#{}", utf16_len(&body), body)
 }
 
 /// Кадр message-паттерна (`@MessagePattern`): сервис ответит на тот же `id`.
@@ -248,8 +254,8 @@ impl Connection {
     }
 
     async fn read_response_inner(&mut self, id: &str) -> Result<String, String> {
-        let char_count = self.read_message_length().await?;
-        let body = self.read_chars(char_count).await?;
+        let code_units = self.read_message_length().await?;
+        let body = self.read_body(code_units).await?;
 
         // Конверт проверяется ради пула: ответ должен быть на наш кадр и быть
         // последним (isDisposed). Непонятный конверт отдаётся как есть — так
@@ -298,14 +304,18 @@ impl Connection {
         len_str.parse::<usize>().map_err(|e| e.to_string())
     }
 
-    /// Тело ответа целиком. Длина снова в символах, а не в байтах, поэтому
-    /// читаем посимвольно, добирая продолжение UTF-8 по стартовому байту.
+    /// Тело ответа целиком. Длина снова в UTF-16 code units, а не в байтах и не
+    /// в символах, поэтому читаем посимвольно (продолжение UTF-8 добираем по
+    /// стартовому байту) и списываем со счётчика `len_utf16` символа: эмодзи в
+    /// ответе стоит два code unit. Считать его за один — значит просить у
+    /// сервера символы, которых в кадре нет, и повиснуть до таймаута.
     /// Побайтовые чтения идут через BufReader — иначе на мегабайтном ответе
     /// это был бы syscall на каждый байт.
-    async fn read_chars(&mut self, char_count: usize) -> Result<String, String> {
-        let mut result = String::with_capacity(char_count);
+    async fn read_body(&mut self, code_units: usize) -> Result<String, String> {
+        let mut result = String::with_capacity(code_units);
+        let mut left = code_units;
 
-        for _ in 0..char_count {
+        while left > 0 {
             let mut first = [0u8; 1];
             self.reader
                 .read_exact(&mut first)
@@ -330,7 +340,12 @@ impl Connection {
             }
 
             match std::str::from_utf8(&bytes[..char_len]) {
-                Ok(s) => result.push_str(s),
+                // saturating: длина, обрывающая суррогатную пару пополам,
+                // — испорченный кадр, но дочитывать символ всё равно надо
+                Ok(s) => {
+                    left = left.saturating_sub(utf16_len(s));
+                    result.push_str(s);
+                }
                 Err(e) => return Err(format!("Invalid UTF-8 sequence: {}", e)),
             }
         }
@@ -369,6 +384,16 @@ mod tests {
         let (len, body) = frame.split_once('#').expect("маркер длины");
         assert_eq!(len.parse::<usize>().unwrap(), body.chars().count());
         assert_ne!(body.chars().count(), body.len());
+    }
+
+    #[test]
+    fn frame_length_counts_utf16_code_units() {
+        // флаг 🇷🇺 — два символа вне BMP, у JS это четыре code unit:
+        // по `chars().count()` кадр оказался бы на два короче, чем ждёт NestJS
+        let frame = build_frame("ping", r#"{"msg":"🇷🇺"}"#, "test-id");
+        let (len, body) = frame.split_once('#').expect("маркер длины");
+        assert_eq!(len.parse::<usize>().unwrap(), body.encode_utf16().count());
+        assert_eq!(body.encode_utf16().count(), body.chars().count() + 2);
     }
 
     #[test]
@@ -411,16 +436,25 @@ mod tests {
         (addr, handle)
     }
 
-    /// Кадр из envelope-строки — как его собрал бы NestJS (длина в символах).
+    /// Кадр из envelope-строки — ровно как его собрал бы NestJS: длина в
+    /// UTF-16 code units (`json-socket.js` берёт `string.length` JS-строки).
     fn server_frame(body: &str) -> String {
-        format!("{}#{}", body.chars().count(), body)
+        format!("{}#{}", body.encode_utf16().count(), body)
+    }
+
+    async fn envelope_server(frames: usize) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        envelope_server_with(frames, "привет, мир").await
     }
 
     /// «Сервис» на одно соединение: отвечает на `frames` кадров NestJS-конвертом
     /// с id из принятого кадра и закрывается. Возвращает адрес и принятые кадры.
-    async fn envelope_server(frames: usize) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+    async fn envelope_server_with(
+        frames: usize,
+        msg: &str,
+    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr").to_string();
+        let msg = msg.to_string();
         let handle = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.expect("accept");
             let mut received = Vec::new();
@@ -437,7 +471,7 @@ mod tests {
                     .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(str::to_string))
                     .unwrap_or_default();
                 let envelope = format!(
-                    r#"{{"err":null,"response":{{"msg":"привет, мир"}},"isDisposed":true,"id":"{id}"}}"#
+                    r#"{{"err":null,"response":{{"msg":"{msg}"}},"isDisposed":true,"id":"{id}"}}"#
                 );
                 socket
                     .write_all(server_frame(&envelope).as_bytes())
@@ -476,6 +510,23 @@ mod tests {
         let (len, body) = received.split_once('#').expect("маркер длины");
         assert_eq!(len.parse::<usize>().unwrap(), body.chars().count());
         assert!(body.contains(r#""id":"kai-"#), "{body}");
+    }
+
+    #[tokio::test]
+    async fn exchange_reads_response_with_astral_chars() {
+        // ipwhois отдаёт флаг страны эмодзи: 🇷🇺 — два символа вне BMP, четыре
+        // code unit. Пока длину читали как число символов, клиент ждал ещё
+        // четыре символа сверх кадра и висел до таймаута (при закрытии — early
+        // eof). Кириллица рядом ловит обратную ошибку — счёт в байтах.
+        let (addr, server) = envelope_server_with(1, "🇷🇺 Россия").await;
+
+        let resp = exchange(&addr, "ping", "{}", &ExchangeOpts::default())
+            .await
+            .expect("exchange");
+        assert!(resp.ok, "{}", resp.message);
+        let envelope: serde_json::Value = serde_json::from_str(&resp.message).expect("json");
+        assert_eq!(envelope["response"]["msg"], "🇷🇺 Россия");
+        server.await.expect("server");
     }
 
     #[tokio::test]
