@@ -5092,7 +5092,7 @@ dependencies = [
 
 [[package]]
 name = "tcp-kai"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "clap",
  "clap_complete",
