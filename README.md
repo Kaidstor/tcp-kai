@@ -26,7 +26,7 @@ brew install kaidstor/tap/tcp-kai
    xattr -dr com.apple.quarantine /Applications/tcp-kai.app
    ```
 
-3. Дальше приложение обновляется само: updater качает релизы с GitHub (тост о новой версии, «Check for Updates…» в меню), после обновления показывается «Что нового» с историей версий. Установленные версии ≤1.3.4 продолжают читать манифест с GitLab — зеркало latest.json там публикуется, пока такие клиенты живы.
+3. Дальше приложение обновляется само: updater качает релизы с GitHub (тост о новой версии, «Check for Updates…» в меню), после обновления показывается «Что нового» с историей версий.
 
 CLI `tcp-kai` лежит внутри бандла — пункт меню **tcp-kai → Install CLI…** делает симлинк в PATH, и CLI обновляется вместе с приложением. То же руками — `./scripts/install-cli.sh`.
 
@@ -167,8 +167,7 @@ bun run tauri dev     # разработка
 bun run tauri build   # сборка .app/.dmg
 
 # локальный релиз: бамп версии, сборка, подпись, нотаризация, GitHub-релиз
-# (артефакты автообновления + tcp-kai-cli-darwin-aarch64.tar.gz, бамп каска,
-# зеркало latest.json в GitLab для клиентов ≤1.3.4).
+# (артефакты автообновления + tcp-kai-cli-darwin-aarch64.tar.gz, бамп каска).
 # APPLE_PASSWORD хранится в sec — без него tauri молча пропустит нотаризацию
 # (релизный скрипт это ловит и не даёт опубликовать ненотаризованный бандл)
 sec run apple --only APPLE_PASSWORD -- ./release.sh
