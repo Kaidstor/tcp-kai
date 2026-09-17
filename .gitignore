@@ -14,4 +14,3 @@ vite.config.ts.timestamp-*
 src-tauri/binaries/
 
 upload_assets.sh
-release.sh
