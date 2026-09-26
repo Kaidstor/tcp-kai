@@ -67,20 +67,45 @@ fn keys(project: &str, env: Option<&str>) -> Result<Vec<String>, String> {
         })?;
 
     if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let err = err.trim();
+        let err = envelope_error(&out.stdout)
+            .unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string());
         return Err(format!(
             "sec ls {project}: {}",
             if err.is_empty() {
                 "проект не найден"
             } else {
-                err
+                &err
             }
         ));
     }
-    let rows: Vec<KeyRow> = serde_json::from_slice(&out.stdout)
-        .map_err(|e| format!("sec ls {project}: не разобрать JSON ({e})"))?;
+    parse_keys(&out.stdout).map_err(|e| format!("sec ls {project}: {e}"))
+}
+
+/// Разбирает ответ `sec ls --json`: голый массив строк до sec с конвертом и
+/// конверт `{v, data, error}` после — обе формы, пока на машинах стоят разные
+/// версии sec.
+fn parse_keys(stdout: &[u8]) -> Result<Vec<String>, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(stdout).map_err(|e| format!("не разобрать JSON ({e})"))?;
+    let rows = match value {
+        serde_json::Value::Object(mut map) if map.contains_key("v") => {
+            map.remove("data").unwrap_or(serde_json::Value::Null)
+        }
+        other => other,
+    };
+    let rows: Vec<KeyRow> =
+        serde_json::from_value(rows).map_err(|e| format!("неожиданный формат ответа ({e})"))?;
     Ok(rows.into_iter().map(|r| r.key).collect())
+}
+
+/// Текст отказа из конверта: sec с `--json` пишет его в stdout, а не в stderr.
+fn envelope_error(stdout: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(stdout).ok()?;
+    value
+        .get("error")?
+        .get("message")?
+        .as_str()
+        .map(str::to_string)
 }
 
 /// Значение ключа — `sec get <proj>/<KEY>`.
@@ -138,6 +163,22 @@ pub fn resolve(project: &str, env: Option<&str>, needed: &[String]) -> Result<Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_keys_reads_bare_array_and_envelope() {
+        let bare = br#"[{"key":"TOKEN"},{"key":"URL"}]"#;
+        let env = br#"{"v":1,"command":"ls","exit":0,"data":[{"key":"TOKEN"}],"error":null}"#;
+        assert_eq!(parse_keys(bare).unwrap(), vec!["TOKEN", "URL"]);
+        assert_eq!(parse_keys(env).unwrap(), vec!["TOKEN"]);
+        assert!(parse_keys(br#"{"v":1,"data":{"prod":[]}}"#).is_err());
+    }
+
+    #[test]
+    fn envelope_error_takes_message_from_stdout() {
+        let out = br#"{"v":1,"command":"ls","exit":3,"data":null,"error":{"kind":"not_found","message":"no project"}}"#;
+        assert_eq!(envelope_error(out).as_deref(), Some("no project"));
+        assert_eq!(envelope_error(b"plain text"), None);
+    }
 
     #[test]
     fn project_name_is_sec_safe() {
