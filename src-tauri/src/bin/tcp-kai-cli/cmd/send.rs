@@ -1,7 +1,6 @@
 //! `tcp-kai <ms> <cmd>` — отправка сохранённого в приложении запроса.
 
 use std::io::{IsTerminal, Read};
-use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::Args;
@@ -9,6 +8,7 @@ use sqlx::SqlitePool;
 use tcp_kai_lib::db::{self, Collection, EnvPack, EnvVar, Request};
 use tcp_kai_lib::tcp;
 
+use crate::output::{code, CliError, Done, Printer};
 use crate::{daemon, sec, vars};
 
 #[derive(Args)]
@@ -50,10 +50,6 @@ pub struct SendArgs {
     #[arg(long = "url", value_name = "HOST:PORT")]
     pub url: Option<String>,
 
-    /// В stdout — только ответ сервиса, как есть (для jq)
-    #[arg(long = "json")]
-    pub json: bool,
-
     /// Не писать в историю приложения
     #[arg(long = "no-history")]
     pub no_history: bool,
@@ -87,16 +83,16 @@ fn format_json(text: &str) -> String {
         .unwrap_or_else(|_| text.to_string())
 }
 
-fn read_stdin() -> Result<String, String> {
+fn read_stdin() -> Result<String, CliError> {
     let mut buf = String::new();
     std::io::stdin()
         .read_to_string(&mut buf)
-        .map_err(|e| format!("не прочитать stdin: {e}"))?;
+        .map_err(|e| CliError::usage(format!("не прочитать stdin: {e}")))?;
     Ok(buf)
 }
 
 /// Тело: `-d` → `-f` → stdin, если его подали → сохранённое в приложении.
-fn body(args: &SendArgs, saved: Option<&str>) -> Result<String, String> {
+fn body(args: &SendArgs, saved: Option<&str>) -> Result<String, CliError> {
     if let Some(data) = &args.data {
         return Ok(data.clone());
     }
@@ -104,7 +100,7 @@ fn body(args: &SendArgs, saved: Option<&str>) -> Result<String, String> {
         return if file == "-" {
             read_stdin()
         } else {
-            std::fs::read_to_string(file).map_err(|e| format!("не прочитать {file}: {e}"))
+            super::read_file(file)
         };
     }
     // `echo '{...}' | tcp-kai ms cmd` — тело из трубы; пустой stdin
@@ -126,13 +122,14 @@ fn body(args: &SendArgs, saved: Option<&str>) -> Result<String, String> {
 /// (`{{host}}:{{port}}`) или прибит гвоздями; `--url` уходит в базу, только
 /// если брать больше неоткуда, иначе стенд одного вызова стал бы постоянным.
 async fn create_request(
+    p: &mut Printer,
     pool: &SqlitePool,
     collection: &Collection,
     siblings: &[Request],
     pack: Option<&EnvPack>,
     args: &SendArgs,
     body_tpl: &str,
-) -> Result<Request, String> {
+) -> Result<Request, CliError> {
     let name = args.request.trim();
     let has_host = pack.is_some_and(|p| p.vars.iter().any(|v| v.key.eq_ignore_ascii_case("host")));
     let url = siblings
@@ -159,10 +156,10 @@ async fn create_request(
         },
     )
     .await?;
-    eprintln!(
-        "tcp-kai: + запрос «{name}» заведён в коллекции «{}» ({url})",
+    p.warn(format!(
+        "+ запрос «{name}» заведён в коллекции «{}» ({url})",
         collection.name
-    );
+    ));
 
     Ok(Request {
         id,
@@ -186,8 +183,41 @@ fn needed_vars(url: &str, body: &str) -> Vec<String> {
     names
 }
 
-pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
-    let pool = db::open().await?;
+/// Отказ транспорта: таймауты — код 4, остальное — сеть. Тексты приходят из
+/// `tcp.rs` и от демона одинаковыми, другого признака у `ApiResponse` нет —
+/// поменял текст там, поправь и здесь.
+fn transport_error(message: &str) -> CliError {
+    let timed_out = message.starts_with("No response within")
+        || (message.starts_with("Connection to ") && message.contains("timed out"));
+    if timed_out {
+        CliError::timeout(message)
+    } else {
+        CliError::network(message)
+    }
+}
+
+fn reply_value(message: &str) -> serde_json::Value {
+    serde_json::from_str(message).unwrap_or_else(|_| serde_json::Value::String(message.into()))
+}
+
+/// NestJS кладёт исключение обработчика в поле `err` конверта ответа.
+fn service_error(reply: &serde_json::Value) -> Option<CliError> {
+    let err = reply.get("err").filter(|e| !e.is_null())?;
+    let message = err
+        .get("message")
+        .and_then(|m| m.as_str())
+        .map(str::to_string)
+        .or_else(|| err.as_str().map(str::to_string))
+        .unwrap_or_else(|| err.to_string());
+    Some(CliError::new(
+        code::NOT_APPLIED,
+        "api",
+        format!("сервис ответил ошибкой: {message}"),
+    ))
+}
+
+pub async fn run(args: SendArgs, p: &mut Printer) -> Result<Done, CliError> {
+    let pool = super::open_db().await?;
     let collection = super::collection(&pool, &args.collection).await?;
     let requests = db::requests(&pool, collection.id).await?;
     let packs = db::packs(&pool, collection.id).await?;
@@ -206,40 +236,39 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
     let body_tpl = body(&args, existing.as_ref().and_then(|r| r.body.as_deref()))?;
     let request = match existing {
         Some(r) => r,
-        None => create_request(&pool, &collection, &requests, pack, &args, &body_tpl).await?,
+        None => create_request(p, &pool, &collection, &requests, pack, &args, &body_tpl).await?,
     };
 
     let pattern = request
         .cmd
         .clone()
         .filter(|c| !c.is_empty())
-        .ok_or_else(|| format!("у запроса «{}» не задан cmd", request.name))?;
+        .ok_or_else(|| CliError::config(format!("у запроса «{}» не задан cmd", request.name)))?;
     let url_tpl = args
         .url
         .clone()
         .or_else(|| request.url.clone())
         .filter(|u| !u.is_empty())
-        .ok_or_else(|| format!("у запроса «{}» не задана строка подключения", request.name))?;
+        .ok_or_else(|| {
+            CliError::config(format!(
+                "у запроса «{}» не задана строка подключения",
+                request.name
+            ))
+        })?;
 
     // источники переменных, по возрастанию приоритета: пак → sec → --var
     let mut env: Vec<EnvVar> = pack.map(|p| p.vars.clone()).unwrap_or_default();
     if args.from_sec {
         let project = sec::project(&collection.name);
         let needed = needed_vars(&url_tpl, &body_tpl);
-        env.extend(sec::resolve(
-            &project,
-            pack.map(|p| p.name.as_str()),
-            &needed,
-        )?);
+        env.extend(
+            sec::resolve(&project, pack.map(|p| p.name.as_str()), &needed)
+                .map_err(CliError::config)?,
+        );
     }
     for kv in &args.var {
-        let (key, value) = kv
-            .split_once('=')
-            .ok_or_else(|| format!("--var ждёт K=V, получено «{kv}»"))?;
-        env.push(EnvVar {
-            key: key.trim().to_string(),
-            value: value.to_string(),
-        });
+        let (key, value) = super::split_var(kv)?;
+        env.push(EnvVar { key, value });
     }
 
     let connection = vars::substitute(&url_tpl, &env);
@@ -252,17 +281,17 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
             Some(p) => format!("в паке «{}» их нет", p.name),
             None => "у коллекции не выбран пак".to_string(),
         };
-        return Err(format!(
+        return Err(CliError::config(format!(
             "строка подключения осталась с {}: {where_from}.\nЗадай их в приложении, через --url HOST:PORT, --var или --from-sec",
             unresolved
                 .iter()
                 .map(|n| format!("{{{{{n}}}}}"))
                 .collect::<Vec<_>>()
                 .join(", ")
-        ));
+        )));
     }
     for name in vars::placeholders(&body_sent) {
-        eprintln!("tcp-kai: {{{{{name}}}}} в теле осталась без значения");
+        p.warn(format!("{{{{{name}}}}} в теле осталась без значения"));
     }
 
     // event-паттерн: явный --emit или сохранённый флаг запроса из GUI
@@ -291,13 +320,19 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
                 (resp, reply.reused, reply.elapsed_ms)
             }
             Err(e) => {
-                eprintln!("tcp-kai: keep-alive-демон недоступен ({e}) — запрос напрямую");
-                let resp = tcp::exchange(&connection, &pattern, &body_sent, &opts).await?;
+                p.warn(format!(
+                    "keep-alive-демон недоступен ({e}) — запрос напрямую"
+                ));
+                let resp = tcp::exchange(&connection, &pattern, &body_sent, &opts)
+                    .await
+                    .map_err(CliError::network)?;
                 (resp, false, started.elapsed().as_secs_f64() * 1000.0)
             }
         }
     } else {
-        let resp = tcp::exchange(&connection, &pattern, &body_sent, &opts).await?;
+        let resp = tcp::exchange(&connection, &pattern, &body_sent, &opts)
+            .await
+            .map_err(CliError::network)?;
         (resp, false, started.elapsed().as_secs_f64() * 1000.0)
     };
     // ⟳ в сводке — ответ пришёл по переиспользованному соединению из пула
@@ -325,41 +360,83 @@ pub async fn run(args: SendArgs) -> Result<ExitCode, String> {
             pack: pack.map(|p| p.name.as_str()),
         };
         if let Err(e) = db::record_send(&pool, &rec).await {
-            eprintln!("tcp-kai: в историю не записал: {e}");
+            p.warn(format!("в историю не записал: {e}"));
         }
     }
 
     if !response.ok {
-        eprintln!(
-            "tcp-kai: {} ({:.2}s)",
-            response.message,
-            elapsed_ms / 1000.0
-        );
-        return Ok(ExitCode::FAILURE);
+        let mut e = transport_error(&response.message);
+        e.message = format!("{} ({:.2}s)", e.message, elapsed_ms / 1000.0);
+        return Err(e);
     }
 
+    let pack_name = pack.map(|p| p.name.as_str()).unwrap_or("без пака");
     if emit {
-        eprintln!(
-            "✓ событие ушло · {} · {} · {:.2}s{reuse_mark}",
-            collection.name,
-            pack.map(|p| p.name.as_str()).unwrap_or("без пака"),
-            elapsed_ms / 1000.0
-        );
-        return Ok(ExitCode::SUCCESS);
+        if !p.json {
+            eprintln!(
+                "✓ событие ушло · {} · {pack_name} · {:.2}s{reuse_mark}",
+                collection.name,
+                elapsed_ms / 1000.0
+            );
+        }
+        return Ok(Done::ok(()));
     }
 
-    if args.json {
-        // stdout — только ответ сервиса, чтобы его можно было отдать в jq
-        println!("{}", response.message);
-    } else {
+    let reply = reply_value(&response.message);
+    if !p.json {
         println!("{received}");
         eprintln!(
-            "✓ {} · {} · {:.2}s{reuse_mark}",
+            "{} {} · {pack_name} · {:.2}s{reuse_mark}",
+            if service_error(&reply).is_some() {
+                "✗"
+            } else {
+                "✓"
+            },
             collection.name,
-            pack.map(|p| p.name.as_str()).unwrap_or("без пака"),
             elapsed_ms / 1000.0
         );
     }
+    Ok(match service_error(&reply) {
+        Some(e) => Done::partial(reply, e),
+        None => Done::ok(reply),
+    })
+}
 
-    Ok(ExitCode::SUCCESS)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeouts_get_code_4() {
+        assert_eq!(
+            transport_error("No response within 60s").code,
+            code::TIMEOUT
+        );
+        assert_eq!(
+            transport_error("Connection to 10.0.0.1:1 timed out after 5s").code,
+            code::TIMEOUT
+        );
+    }
+
+    #[test]
+    fn refused_connection_is_network() {
+        let e = transport_error("TCP connection error: Connection refused (os error 61)");
+        assert_eq!((e.code, e.kind), (code::TOOL, "network"));
+    }
+
+    #[test]
+    fn nest_err_becomes_api_error() {
+        let reply =
+            reply_value(r#"{"err":{"message":"Не авторизован","status":401},"isDisposed":true}"#);
+        let e = service_error(&reply).expect("err в ответе");
+        assert_eq!((e.code, e.kind), (code::NOT_APPLIED, "api"));
+        assert!(e.message.contains("Не авторизован"));
+    }
+
+    #[test]
+    fn plain_response_is_not_an_error() {
+        let reply = reply_value(r#"{"response":{"ok":1},"isDisposed":true,"err":null}"#);
+        assert!(service_error(&reply).is_none());
+        assert_eq!(reply_value("не json"), serde_json::json!("не json"));
+    }
 }

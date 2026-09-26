@@ -1,11 +1,11 @@
 //! `tcp-kai daemon` — управление keep-alive-демоном (пул TCP-соединений).
 
-use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
 
 use crate::daemon;
+use crate::output::{CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct DaemonArgs {
@@ -30,7 +30,7 @@ pub enum DaemonCmd {
     Status,
 }
 
-pub async fn run(args: DaemonArgs) -> Result<ExitCode, String> {
+pub async fn run(args: DaemonArgs, p: &mut Printer) -> Result<Done, CliError> {
     let sock = daemon::socket_path();
     match args.cmd {
         DaemonCmd::Run { ttl, idle_exit } => {
@@ -40,8 +40,9 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode, String> {
                 ttl.map(Duration::from_secs).unwrap_or(default_ttl),
                 idle_exit.map(Duration::from_secs).unwrap_or(default_idle),
             )
-            .await?;
-            Ok(ExitCode::SUCCESS)
+            .await
+            .map_err(|e| CliError::new(crate::output::code::TOOL, "daemon", e))?;
+            Ok(Done::ok(()))
         }
         DaemonCmd::Stop => {
             match daemon::call(
@@ -51,10 +52,22 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode, String> {
             )
             .await
             {
-                Ok(reply) => eprintln!("{}", reply.message),
-                Err(_) => eprintln!("демон не запущен"),
+                Ok(reply) => {
+                    if !p.json {
+                        eprintln!("{}", reply.message);
+                    }
+                    Ok(Done::ok(serde_json::json!({
+                        "wasRunning": true,
+                        "message": reply.message,
+                    })))
+                }
+                Err(_) => {
+                    if !p.json {
+                        eprintln!("демон не запущен");
+                    }
+                    Ok(Done::ok(serde_json::json!({ "wasRunning": false })))
+                }
             }
-            Ok(ExitCode::SUCCESS)
         }
         DaemonCmd::Status => {
             match daemon::call(
@@ -64,10 +77,25 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode, String> {
             )
             .await
             {
-                Ok(reply) => println!("{}", reply.message),
-                Err(_) => println!("демон не запущен ({})", sock.display()),
+                Ok(reply) => {
+                    if !p.json {
+                        println!("{}", reply.message);
+                    }
+                    Ok(Done::ok(serde_json::json!({
+                        "running": true,
+                        "socket": sock,
+                        "status": reply.message,
+                    })))
+                }
+                Err(_) => {
+                    if !p.json {
+                        println!("демон не запущен ({})", sock.display());
+                    }
+                    Ok(Done::ok(
+                        serde_json::json!({ "running": false, "socket": sock }),
+                    ))
+                }
             }
-            Ok(ExitCode::SUCCESS)
         }
     }
 }

@@ -5,10 +5,10 @@
 //! `--url host:port` заодно заводит пак переменных и применяет его — иначе
 //! коллекция получается пустой, и первый же запрос упрётся в `{{host}}`.
 
-use std::process::ExitCode;
-
 use clap::Args;
 use tcp_kai_lib::db::{self, EnvVar};
+
+use crate::output::{CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct NewArgs {
@@ -31,16 +31,18 @@ pub struct NewArgs {
 
 /// `host:port` → переменные пака. Схему (`tcp://`) отрезаем: её легко принести
 /// копипастой из конфига, а в кадр она не едет.
-fn url_vars(url: &str) -> Result<Vec<EnvVar>, String> {
+fn url_vars(url: &str) -> Result<Vec<EnvVar>, CliError> {
     let bare = url
         .split_once("://")
         .map_or(url, |(_, rest)| rest)
         .trim_end_matches('/');
     let (host, port) = bare
         .rsplit_once(':')
-        .ok_or_else(|| format!("--url ждёт HOST:PORT, получено «{url}»"))?;
+        .ok_or_else(|| CliError::usage(format!("--url ждёт HOST:PORT, получено «{url}»")))?;
     if host.is_empty() || port.is_empty() || !port.chars().all(|c| c.is_ascii_digit()) {
-        return Err(format!("--url ждёт HOST:PORT, получено «{url}»"));
+        return Err(CliError::usage(format!(
+            "--url ждёт HOST:PORT, получено «{url}»"
+        )));
     }
     Ok(vec![
         EnvVar {
@@ -54,18 +56,22 @@ fn url_vars(url: &str) -> Result<Vec<EnvVar>, String> {
     ])
 }
 
-pub async fn run(args: NewArgs) -> Result<ExitCode, String> {
+pub async fn run(args: NewArgs, p: &mut Printer) -> Result<Done, CliError> {
     let name = args.collection.trim();
     if name.is_empty() {
-        return Err("имя коллекции пустое".to_string());
+        return Err(CliError::usage("имя коллекции пустое"));
     }
 
-    let pool = db::open().await?;
+    let pool = super::open_db().await?;
     let existing = db::collections(&pool).await?;
     if let Some(c) = existing.iter().find(|c| c.name.eq_ignore_ascii_case(name)) {
-        return Err(format!(
-            "коллекция «{}» уже есть — запросы в ней: tcp-kai ls {}",
-            c.name, c.name
+        return Err(CliError::new(
+            crate::output::code::TOOL,
+            "exists",
+            format!(
+                "коллекция «{}» уже есть — запросы в ней: tcp-kai ls {}",
+                c.name, c.name
+            ),
         ));
     }
 
@@ -74,43 +80,48 @@ pub async fn run(args: NewArgs) -> Result<ExitCode, String> {
         None => Vec::new(),
     };
     for kv in &args.var {
-        let (key, value) = kv
-            .split_once('=')
-            .ok_or_else(|| format!("--var ждёт K=V, получено «{kv}»"))?;
-        let key = key.trim().to_string();
+        let (key, value) = super::split_var(kv)?;
         // --var host=… поверх --url: последнее значение выигрывает, а не
         // ложится второй строкой с тем же именем
         vars.retain(|v| !v.key.eq_ignore_ascii_case(&key));
-        vars.push(EnvVar {
-            key,
-            value: value.to_string(),
-        });
+        vars.push(EnvVar { key, value });
     }
 
     let collection_id = db::insert_collection(&pool, name).await?;
-    println!("коллекция «{name}» заведена");
+    if !p.json {
+        println!("коллекция «{name}» заведена");
+    }
 
+    let mut pack = None;
     if !vars.is_empty() {
         let pack_name = args.env.trim();
         let pack_id = db::insert_pack(&pool, pack_name, &vars, Some(collection_id)).await?;
         db::set_collection_pack(&pool, collection_id, Some(pack_id)).await?;
-        println!(
-            "пак «{pack_name}» применён: {}",
-            vars.iter()
-                .map(|v| format!("{} = {}", v.key, v.value))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        if !p.json {
+            println!(
+                "пак «{pack_name}» применён: {}",
+                vars.iter()
+                    .map(|v| format!("{} = {}", v.key, v.value))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        pack = Some(serde_json::json!({ "id": pack_id, "name": pack_name, "vars": vars }));
     } else {
-        eprintln!("tcp-kai: пака нет — задай адрес через --url HOST:PORT или в приложении");
+        p.warn("пака нет — задай адрес через --url HOST:PORT или в приложении");
     }
 
-    eprintln!(
-        "\nДальше:\n  \
-         tcp-kai {name} <cmd> -d '{{}}'  — запрос заведётся сам\n  \
-         tcp-kai import {name} <контракт.ts>  — или все cmd из контракта"
-    );
-    Ok(ExitCode::SUCCESS)
+    if !p.json {
+        eprintln!(
+            "\nДальше:\n  \
+             tcp-kai {name} <cmd> -d '{{}}'  — запрос заведётся сам\n  \
+             tcp-kai import {name} <контракт.ts>  — или все cmd из контракта"
+        );
+    }
+    Ok(Done::ok(serde_json::json!({
+        "collection": { "id": collection_id, "name": name },
+        "pack": pack,
+    })))
 }
 
 #[cfg(test)]

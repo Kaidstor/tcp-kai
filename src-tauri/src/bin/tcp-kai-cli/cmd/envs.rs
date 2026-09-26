@@ -1,11 +1,10 @@
 //! `tcp-kai envs <ms>` — паки переменных, доступные коллекции: какой применён
 //! в приложении и что в каждом лежит. Отсюда берутся имена для `-e`.
 
-use std::process::ExitCode;
-
 use clap::Args;
 use tcp_kai_lib::db;
 
+use crate::output::{CliError, Done, Printer};
 use crate::sec;
 
 #[derive(Args)]
@@ -13,29 +12,21 @@ pub struct EnvsArgs {
     /// Коллекция — микросервис
     #[arg(value_name = "MS")]
     pub collection: String,
-
-    /// Машинночитаемый вывод
-    #[arg(long)]
-    pub json: bool,
 }
 
-pub async fn run(args: EnvsArgs) -> Result<ExitCode, String> {
-    let pool = db::open().await?;
+pub async fn run(args: EnvsArgs, p: &mut Printer) -> Result<Done, CliError> {
+    let pool = super::open_db().await?;
     let collection = super::collection(&pool, &args.collection).await?;
     let packs = db::packs(&pool, collection.id).await?;
 
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "collection": collection.name,
-                "applied": collection.pack_id,
-                "secProject": sec::project(&collection.name),
-                "packs": packs,
-            }))
-            .map_err(|e| e.to_string())?
-        );
-        return Ok(ExitCode::SUCCESS);
+    let data = serde_json::json!({
+        "collection": collection.name,
+        "applied": collection.pack_id,
+        "secProject": sec::project(&collection.name),
+        "packs": packs,
+    });
+    if p.json {
+        return Ok(Done::ok(data));
     }
 
     if packs.is_empty() {
@@ -43,7 +34,7 @@ pub async fn run(args: EnvsArgs) -> Result<ExitCode, String> {
             "tcp-kai: у коллекции «{}» нет паков переменных",
             collection.name
         );
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Done::ok(data));
     }
 
     for pack in &packs {
@@ -66,5 +57,5 @@ pub async fn run(args: EnvsArgs) -> Result<ExitCode, String> {
         "\nsec-проект для --from-sec: {}",
         sec::project(&collection.name)
     );
-    Ok(ExitCode::SUCCESS)
+    Ok(Done::ok(data))
 }

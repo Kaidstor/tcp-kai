@@ -38,12 +38,45 @@ tcp-kai new billing --url 127.0.0.1:18011   # новая коллекция + п
 
 tcp-kai coordinator auth-login              # отправить (пак — применённый в GUI)
 tcp-kai coordinator auth-login -e local     # тот же запрос на другой стенд
-tcp-kai whois lookup --json | jq .response  # машинночитаемо: в stdout только ответ сервиса
+tcp-kai whois lookup --json | jq .data.response  # машинночитаемо: ответ сервиса в data конверта
 tcp-kai coordinator sync --timeout 300      # долгий запрос (сек; 0 — ждать вечно, дефолт 60)
 tcp-kai notifier user-created --emit        # @EventPattern: кадр без id, ответ не ждать
+
+tcp-kai doctor                              # база приложения и число коллекций
+tcp-kai doctor coordinator -e prod          # + TCP connect на адрес из пака (кадр не шлётся)
 ```
 
-`ls`/`envs`/`history` принимают `--json`. Шелл-дополнения: `tcp-kai completions zsh`.
+Шелл-дополнения: `tcp-kai completions zsh`.
+
+## Вывод и коды выхода
+
+По умолчанию — текст для человека. `--json` есть на любой команде и в любом
+месте argv; он печатает в stdout конверт, отказ — тем же конвертом:
+
+```json
+{"v": 1, "command": "send", "exit": 1, "data": {…}, "warning": ["…"], "error": {"kind": "api", "message": "…"}}
+```
+
+- **`send --json`: в `data` — ответ сервиса как есть**, то есть NestJS-конверт
+  `{"response": …, "isDisposed": true, "id": …}`. Полезная нагрузка —
+  `jq .data.response`. В 1.4.3 и раньше stdout был самим ответом
+  (`jq .response`): старые рецепты с `.response` переписать на `.data.response`.
+- `err` в ответе сервиса (исключение обработчика, `Не авторизован` и т.п.) —
+  код 1 и `error.kind: "api"`, сам ответ остаётся в `data`. Раньше такой ответ
+  выходил с кодом 0.
+- Код 4 (`kind: "timeout"`): если не ответил connect, кадр не ушёл и повтор
+  безопасен; если истёк `--timeout` после отправки — сервис мог принять
+  запрос, запись не повторять вслепую.
+- `exit` в конверте дублирует код выхода — для запуска фоном с выводом в файл.
+- Предупреждения (`{{var}}` без значения, демон недоступен, запрос заведён
+  автоматически) в `--json` едут в `warning`, в тексте — в stderr.
+- `kind`: `usage`, `config`, `db`, `network`, `timeout`, `not_found`, `api`,
+  `exists` (`new` на занятое имя), `empty` (в контракте нет cmd), `daemon`,
+  `skills`.
+
+`doctor` отвечает `data.checks` — список `{name, ok, details}` (`database`,
+`collections`, `address`); код — по первой упавшей проверке: нет базы — 2,
+коллекции нет — 3, адрес отказал — 2 (`network`), connect не ответил — 4.
 
 Последовательные вызовы переиспользуют TCP-соединение через keep-alive-демон
 (`send` поднимает его сам; в сводке переиспользование помечено `⟳`). Скриптам

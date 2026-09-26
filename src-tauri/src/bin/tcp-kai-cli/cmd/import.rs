@@ -1,12 +1,11 @@
 //! `tcp-kai import <ms> <контракт.ts>` — завести в коллекции запросы по
 //! cmd-паттернам из NestJS-контракта (as-const объект, enum, @MessagePattern).
 
-use std::process::ExitCode;
-
 use clap::Args;
 use tcp_kai_lib::{contract, db};
 
 use super::DEFAULT_URL;
+use crate::output::{code, CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct ImportArgs {
@@ -31,16 +30,19 @@ pub struct ImportArgs {
     pub with_deprecated: bool,
 }
 
-pub async fn run(args: ImportArgs) -> Result<ExitCode, String> {
-    let source = std::fs::read_to_string(&args.path)
-        .map_err(|e| format!("не прочитать {}: {e}", args.path))?;
+fn empty(message: String) -> CliError {
+    CliError::new(code::NOT_APPLIED, "empty", message)
+}
+
+pub async fn run(args: ImportArgs, p: &mut Printer) -> Result<Done, CliError> {
+    let source = super::read_file(&args.path)?;
     let groups = contract::parse(&source);
 
     if groups.is_empty() {
-        return Err(format!(
+        return Err(empty(format!(
             "в {} не нашлось ни enum, ни as-const объектов, ни @MessagePattern",
             args.path
-        ));
+        )));
     }
 
     // --all снимает фильтр по имени контейнера; без него берём только
@@ -68,10 +70,13 @@ pub async fn run(args: ImportArgs) -> Result<ExitCode, String> {
                 skipped_groups.join(", ")
             )
         };
-        return Err(format!("cmd-паттернов в {} не нашлось{hint}", args.path));
+        return Err(empty(format!(
+            "cmd-паттернов в {} не нашлось{hint}",
+            args.path
+        )));
     }
 
-    let pool = db::open().await?;
+    let pool = super::open_db().await?;
     let collection = super::collection(&pool, &args.collection).await?;
     let existing = db::requests(&pool, collection.id).await?;
 
@@ -107,57 +112,73 @@ pub async fn run(args: ImportArgs) -> Result<ExitCode, String> {
         .map(|r| r.name.as_str())
         .collect();
 
-    println!(
-        "{} → {}: в контракте {} cmd, уже заведено {}, новых {}",
-        args.path,
-        collection.name,
-        cmds.len(),
-        found.len(),
-        fresh.len()
-    );
-
-    for c in &fresh {
-        let mark = if c.deprecated { "  (@deprecated)" } else { "" };
-        println!("  + {}{mark}", c.value);
-    }
-    if !deprecated_skipped.is_empty() {
+    if !p.json {
         println!(
-            "  пропущены как @deprecated: {} (взять — --with-deprecated)",
-            deprecated_skipped.join(", ")
+            "{} → {}: в контракте {} cmd, уже заведено {}, новых {}",
+            args.path,
+            collection.name,
+            cmds.len(),
+            found.len(),
+            fresh.len()
         );
-    }
-    if !gone.is_empty() {
-        println!("  в контракте нет (не трогаю): {}", gone.join(", "));
-    }
-    if !skipped_groups.is_empty() {
-        println!(
-            "  контейнеры без cmd-имени (пропущены, --all возьмёт): {}",
-            skipped_groups.join(", ")
-        );
-    }
 
-    // значения-ссылки, не разрешившиеся внутри файла: их литералы живут в
-    // импортируемых *.constants.ts — подсказываем, что импортировать следом
-    let ref_sources: std::collections::BTreeSet<&str> = groups
-        .iter()
-        .filter(|g| args.all || g.is_cmd)
-        .flat_map(|g| g.refs.iter())
-        .map(|r| r.target.split('.').next().unwrap_or(r.target.as_str()))
-        .collect();
-    if !ref_sources.is_empty() {
-        let n: usize = groups
+        for c in &fresh {
+            let mark = if c.deprecated { "  (@deprecated)" } else { "" };
+            println!("  + {}{mark}", c.value);
+        }
+        if !deprecated_skipped.is_empty() {
+            println!(
+                "  пропущены как @deprecated: {} (взять — --with-deprecated)",
+                deprecated_skipped.join(", ")
+            );
+        }
+        if !gone.is_empty() {
+            println!("  в контракте нет (не трогаю): {}", gone.join(", "));
+        }
+        if !skipped_groups.is_empty() {
+            println!(
+                "  контейнеры без cmd-имени (пропущены, --all возьмёт): {}",
+                skipped_groups.join(", ")
+            );
+        }
+
+        // значения-ссылки, не разрешившиеся внутри файла: их литералы живут в
+        // импортируемых *.constants.ts — подсказываем, что импортировать следом
+        let ref_sources: std::collections::BTreeSet<&str> = groups
             .iter()
             .filter(|g| args.all || g.is_cmd)
-            .map(|g| g.refs.len())
-            .sum();
-        println!(
-            "  {n} значений — ссылки на другие константы ({}): импортни их файлы отдельно",
-            ref_sources.into_iter().collect::<Vec<_>>().join(", ")
-        );
+            .flat_map(|g| g.refs.iter())
+            .map(|r| r.target.split('.').next().unwrap_or(r.target.as_str()))
+            .collect();
+        if !ref_sources.is_empty() {
+            let n: usize = groups
+                .iter()
+                .filter(|g| args.all || g.is_cmd)
+                .map(|g| g.refs.len())
+                .sum();
+            println!(
+                "  {n} значений — ссылки на другие константы ({}): импортни их файлы отдельно",
+                ref_sources.into_iter().collect::<Vec<_>>().join(", ")
+            );
+        }
     }
 
+    let report = |created: bool| {
+        serde_json::json!({
+            "path": args.path,
+            "collection": collection.name,
+            "total": cmds.len(),
+            "existing": found.len(),
+            "fresh": fresh.iter().map(|c| &c.value).collect::<Vec<_>>(),
+            "created": created,
+            "deprecatedSkipped": deprecated_skipped,
+            "gone": gone,
+            "skippedContainers": skipped_groups,
+        })
+    };
+
     if args.dry_run {
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Done::ok(report(false)));
     }
 
     for c in &fresh {
@@ -174,10 +195,12 @@ pub async fn run(args: ImportArgs) -> Result<ExitCode, String> {
         )
         .await?;
     }
-    if fresh.is_empty() {
-        println!("создавать нечего");
-    } else {
-        println!("создано запросов: {}", fresh.len());
+    if !p.json {
+        if fresh.is_empty() {
+            println!("создавать нечего");
+        } else {
+            println!("создано запросов: {}", fresh.len());
+        }
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(Done::ok(report(!fresh.is_empty())))
 }

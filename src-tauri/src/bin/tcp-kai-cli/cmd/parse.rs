@@ -2,38 +2,34 @@
 //! и cmd-значения, без базы и без импорта. Удобно проверить контракт до
 //! `tcp-kai import` (и этим же пользуются автотесты на реальных сервисах).
 
-use std::process::ExitCode;
-
 use clap::Args;
 use tcp_kai_lib::contract;
+
+use crate::output::{code, CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct ParseArgs {
     /// Путь к контракту: *.contract.ts, cmd.enum.ts или контроллер
     #[arg(value_name = "ПУТЬ")]
     pub path: String,
-
-    /// Машинночитаемый вывод (группы как их видит импорт)
-    #[arg(long)]
-    pub json: bool,
 }
 
-pub async fn run(args: ParseArgs) -> Result<ExitCode, String> {
-    let source = std::fs::read_to_string(&args.path)
-        .map_err(|e| format!("не прочитать {}: {e}", args.path))?;
+pub async fn run(args: ParseArgs, p: &mut Printer) -> Result<Done, CliError> {
+    let source = super::read_file(&args.path)?;
     let groups = contract::parse(&source);
 
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&groups).map_err(|e| e.to_string())?
-        );
-        return Ok(ExitCode::SUCCESS);
-    }
-
     if groups.is_empty() {
-        eprintln!("tcp-kai: ни enum, ни as-const объектов, ни @MessagePattern не нашлось");
-        return Ok(ExitCode::FAILURE);
+        return Ok(Done::partial(
+            groups,
+            CliError::new(
+                code::NOT_APPLIED,
+                "empty",
+                "ни enum, ни as-const объектов, ни @MessagePattern не нашлось",
+            ),
+        ));
+    }
+    if p.json {
+        return Ok(Done::ok(groups));
     }
 
     for g in &groups {
@@ -55,5 +51,5 @@ pub async fn run(args: ParseArgs) -> Result<ExitCode, String> {
             println!("  {} = {}  (ссылка — импортни её файл)", r.key, r.target);
         }
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(Done::ok(groups))
 }

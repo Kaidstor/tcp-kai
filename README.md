@@ -86,7 +86,7 @@ tcp-kai history coordinator auth-login      # последние обмены (-
 
 tcp-kai coordinator auth-login              # отправить (= tcp-kai send …; пак — применённый в GUI)
 tcp-kai coordinator auth-login -e local     # тот же запрос на другой стенд (состояние GUI не меняет)
-tcp-kai whois lookup --json | jq .response  # машинночитаемо: в stdout только ответ сервиса
+tcp-kai whois lookup --json | jq .data.response  # JSON-конверт, ответ сервиса в data
 tcp-kai coordinator sync --timeout 300      # долгий запрос (сек; 0 — ждать вечно)
 tcp-kai notifier user-created --emit        # @EventPattern: кадр без id, ответ не ждать
 
@@ -96,6 +96,7 @@ tcp-kai billing charge -d '{"sum":100}'     # запроса ещё нет — �
 tcp-kai parse  ../whois/src/contracts/cmd.contract.ts       # что найдётся в контракте (без базы)
 tcp-kai import whois ../whois/src/contracts/cmd.contract.ts # создать новые запросы (--dry-run)
 tcp-kai daemon status                       # keep-alive-демон: пул соединений (stop, run)
+tcp-kai doctor coordinator -e prod          # база, коллекции, TCP connect на адрес из пака
 tcp-kai completions zsh                     # шелл-дополнения
 ```
 

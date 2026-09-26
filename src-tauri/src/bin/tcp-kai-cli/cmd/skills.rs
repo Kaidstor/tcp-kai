@@ -3,10 +3,11 @@
 //! чек на старте GUI и после `send` перезаписывают устаревшие копии.
 
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 use tcp_kai_lib::skills_sync as sync;
+
+use crate::output::{code, CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct SkillsArgs {
@@ -44,13 +45,15 @@ pub struct InstallArgs {
     pub force: bool,
 }
 
-fn dirs_for(args: &InstallArgs) -> Result<Vec<(&'static str, PathBuf)>, String> {
+fn dirs_for(args: &InstallArgs) -> Result<Vec<(&'static str, PathBuf)>, CliError> {
     if let Some(dir) = &args.dir {
         return Ok(vec![("dir", dir.clone())]);
     }
     let all = sync::agent_dirs();
     if all.is_empty() {
-        return Err("не найдено ни ~/.claude, ни ~/.codex — агентов на машине нет".into());
+        return Err(CliError::not_found(
+            "не найдено ни ~/.claude, ни ~/.codex — агентов на машине нет",
+        ));
     }
     match args.target.as_deref() {
         None => Ok(all),
@@ -58,17 +61,17 @@ fn dirs_for(args: &InstallArgs) -> Result<Vec<(&'static str, PathBuf)>, String> 
             let found: Vec<_> = all.iter().filter(|(n, _)| *n == want).cloned().collect();
             if found.is_empty() {
                 let known: Vec<&str> = all.iter().map(|(n, _)| *n).collect();
-                return Err(format!(
+                return Err(CliError::not_found(format!(
                     "агент «{want}» не найден. Есть: {}",
                     known.join(", ")
-                ));
+                )));
             }
             Ok(found)
         }
     }
 }
 
-fn install(args: &InstallArgs) -> Result<ExitCode, String> {
+fn install(args: &InstallArgs, p: &mut Printer) -> Result<Done, CliError> {
     let link_target = match &args.link {
         None => None,
         Some(None) => Some(PathBuf::from(sync::REPO_SKILL_DIR)),
@@ -76,14 +79,15 @@ fn install(args: &InstallArgs) -> Result<ExitCode, String> {
     };
     if let Some(t) = &link_target {
         if !t.join("SKILL.md").is_file() {
-            return Err(format!(
+            return Err(CliError::usage(format!(
                 "в {} нет SKILL.md — укажи каталог скилла явно: --link ПУТЬ",
                 t.display()
-            ));
+            )));
         }
     }
 
-    let mut failed = false;
+    let mut failed = Vec::new();
+    let mut results = Vec::new();
     for (name, dir) in dirs_for(args)? {
         let res = match &link_target {
             Some(t) => {
@@ -92,28 +96,54 @@ fn install(args: &InstallArgs) -> Result<ExitCode, String> {
             None => sync::install(&dir, args.force).map(|_| format!("копия v{}", sync::VERSION)),
         };
         match res {
-            Ok(what) => println!("✓ {name}: {what} — {}", dir.display()),
+            Ok(what) => {
+                if !p.json {
+                    println!("✓ {name}: {what} — {}", dir.display());
+                }
+                results.push(serde_json::json!({
+                    "agent": name, "dir": dir, "ok": true, "details": what,
+                }));
+            }
             Err(e) => {
-                eprintln!("tcp-kai: {name}: {e}");
-                failed = true;
+                p.warn(format!("{name}: {e}"));
+                failed.push(name);
+                results.push(serde_json::json!({
+                    "agent": name, "dir": dir, "ok": false, "details": e.to_string(),
+                }));
             }
         }
     }
-    Ok(if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    if failed.is_empty() {
+        return Ok(Done::ok(results));
+    }
+    Ok(Done::partial(
+        results,
+        CliError::new(
+            code::NOT_APPLIED,
+            "skills",
+            format!("скилл не встал: {}", failed.join(", ")),
+        ),
+    ))
 }
 
-fn status() -> ExitCode {
+fn status(p: &Printer) -> Done {
     let all = sync::agent_dirs();
     if all.is_empty() {
-        println!("агентов не найдено (нет ни ~/.claude, ни ~/.codex)");
-        return ExitCode::SUCCESS;
+        if !p.json {
+            println!("агентов не найдено (нет ни ~/.claude, ни ~/.codex)");
+        }
+        return Done::ok(Vec::<()>::new());
     }
+    let mut rows = Vec::new();
     for (name, dir) in all {
-        let line = match sync::state(&dir) {
+        let state = sync::state(&dir);
+        let (kind, version) = match &state {
+            sync::State::Missing => ("missing", None),
+            sync::State::Symlink(_) => ("symlink", None),
+            sync::State::Managed { version } => ("managed", Some(version.clone())),
+            sync::State::Manual => ("manual", None),
+        };
+        let line = match state {
             sync::State::Missing => "не установлен (tcp-kai skills install)".to_string(),
             sync::State::Symlink(target) => {
                 format!("симлинк → {} (обновляется сам)", target.display())
@@ -130,15 +160,25 @@ fn status() -> ExitCode {
                     .to_string()
             }
         };
-        println!("{name}: {line} — {}", dir.display());
+        if !p.json {
+            println!("{name}: {line} — {}", dir.display());
+        }
+        rows.push(serde_json::json!({
+            "agent": name,
+            "dir": dir,
+            "state": kind,
+            "version": version,
+            "current": sync::VERSION,
+            "details": line,
+        }));
     }
-    ExitCode::SUCCESS
+    Done::ok(rows)
 }
 
-pub fn run(args: SkillsArgs) -> Result<ExitCode, String> {
+pub fn run(args: SkillsArgs, p: &mut Printer) -> Result<Done, CliError> {
     match args.cmd {
-        SkillsCmd::Install(a) => install(&a),
-        SkillsCmd::Status => Ok(status()),
+        SkillsCmd::Install(a) => install(&a, p),
+        SkillsCmd::Status => Ok(status(p)),
     }
 }
 

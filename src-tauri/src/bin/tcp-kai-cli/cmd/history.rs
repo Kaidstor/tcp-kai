@@ -1,10 +1,10 @@
 //! `tcp-kai history <ms> <cmd>` — последние обмены запроса из общей с GUI
 //! истории, не открывая приложение.
 
-use std::process::ExitCode;
-
 use clap::Args;
 use tcp_kai_lib::db;
+
+use crate::output::{CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct HistoryArgs {
@@ -23,31 +23,23 @@ pub struct HistoryArgs {
     /// Печатать и тела (sent/received), а не только сводку
     #[arg(long = "full")]
     pub full: bool,
-
-    /// Машинночитаемый вывод
-    #[arg(long)]
-    pub json: bool,
 }
 
-pub async fn run(args: HistoryArgs) -> Result<ExitCode, String> {
-    let pool = db::open().await?;
+pub async fn run(args: HistoryArgs, p: &mut Printer) -> Result<Done, CliError> {
+    let pool = super::open_db().await?;
     let collection = super::collection(&pool, &args.collection).await?;
     let requests = db::requests(&pool, collection.id).await?;
     let request = super::request(&requests, &args.request)?;
 
     let entries = db::history(&pool, request.id, args.limit.max(1)).await?;
 
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?
-        );
-        return Ok(ExitCode::SUCCESS);
+    if p.json {
+        return Ok(Done::ok(entries));
     }
 
     if entries.is_empty() {
         eprintln!("tcp-kai: у запроса «{}» пустая история", request.name);
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Done::ok(entries));
     }
 
     for e in &entries {
@@ -68,5 +60,5 @@ pub async fn run(args: HistoryArgs) -> Result<ExitCode, String> {
             }
         }
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(Done::ok(entries))
 }

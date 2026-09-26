@@ -1,42 +1,34 @@
 //! `tcp-kai ls` — коллекции (микросервисы); `tcp-kai ls <ms>` — её запросы.
 
-use std::process::ExitCode;
-
 use clap::Args;
 use tcp_kai_lib::db;
+
+use crate::output::{CliError, Done, Printer};
 
 #[derive(Args)]
 pub struct LsArgs {
     /// Коллекция — показать её запросы; без аргумента — список коллекций
     #[arg(value_name = "MS")]
     pub collection: Option<String>,
-
-    /// Машинночитаемый вывод
-    #[arg(long)]
-    pub json: bool,
 }
 
-pub async fn run(args: LsArgs) -> Result<ExitCode, String> {
-    let pool = db::open().await?;
+pub async fn run(args: LsArgs, p: &mut Printer) -> Result<Done, CliError> {
+    let pool = super::open_db().await?;
     match args.collection.as_deref() {
-        None => collections(&pool, args.json).await,
-        Some(name) => requests(&pool, name, args.json).await,
+        None => collections(&pool, p).await,
+        Some(name) => requests(&pool, name, p).await,
     }
 }
 
-async fn collections(pool: &sqlx::SqlitePool, json: bool) -> Result<ExitCode, String> {
+async fn collections(pool: &sqlx::SqlitePool, p: &mut Printer) -> Result<Done, CliError> {
     let rows = db::overview(pool).await?;
 
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?
-        );
-        return Ok(ExitCode::SUCCESS);
+    if p.json {
+        return Ok(Done::ok(rows));
     }
     if rows.is_empty() {
         eprintln!("tcp-kai: коллекций нет — заведи их в приложении");
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Done::ok(rows));
     }
 
     let width = rows
@@ -52,23 +44,19 @@ async fn collections(pool: &sqlx::SqlitePool, json: bool) -> Result<ExitCode, St
             r.pack.as_deref().unwrap_or("—"),
         );
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(Done::ok(rows))
 }
 
-async fn requests(pool: &sqlx::SqlitePool, name: &str, json: bool) -> Result<ExitCode, String> {
+async fn requests(pool: &sqlx::SqlitePool, name: &str, p: &mut Printer) -> Result<Done, CliError> {
     let collection = super::collection(pool, name).await?;
     let rows = db::requests(pool, collection.id).await?;
 
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?
-        );
-        return Ok(ExitCode::SUCCESS);
+    if p.json {
+        return Ok(Done::ok(rows));
     }
     if rows.is_empty() {
         eprintln!("tcp-kai: в коллекции «{}» нет запросов", collection.name);
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Done::ok(rows));
     }
 
     let width = rows
@@ -85,5 +73,5 @@ async fn requests(pool: &sqlx::SqlitePool, name: &str, json: bool) -> Result<Exi
         };
         println!("{:width$}  {}", r.name, cmd);
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(Done::ok(rows))
 }
