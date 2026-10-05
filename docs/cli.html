@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>tcp-kai 1.0.0 — что нового</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --panel-2: #fbfbfc;
+    --ink: #1c1d21;
+    --muted: #6b6d76;
+    --faint: #9a9ca4;
+    --line: #e6e6ea;
+    --accent: #d0402b;
+    --accent-soft: #fbeae7;
+    --code-bg: #f2f2f4;
+    --code-ink: #24252b;
+    --green: #2e8b57;
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181b;
+      --panel: #1e1f23;
+      --panel-2: #212227;
+      --ink: #e9e9ec;
+      --muted: #9fa1aa;
+      --faint: #71737c;
+      --line: #2c2e34;
+      --accent: #ff6a4d;
+      --accent-soft: #33211e;
+      --code-bg: #16171a;
+      --code-ink: #d6d7db;
+      --green: #4cc38a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 24px 96px; }
+
+  header.hero { margin-bottom: 40px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .04em;
+    color: var(--accent); background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    padding: 4px 10px; border-radius: 999px; margin-bottom: 18px;
+  }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); font-size: 16px; margin: 0; max-width: 62ch; }
+  .meta {
+    margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--faint);
+  }
+  .meta span { border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--faint); margin: 44px 0 16px; font-weight: 600;
+  }
+  h3 { font-size: 17px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  p { margin: 0 0 12px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px 22px; margin-bottom: 14px;
+  }
+  .card .tag {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    letter-spacing: .03em; margin-bottom: 6px;
+  }
+  .card p:last-child { margin-bottom: 0; }
+  .card .sub { color: var(--muted); }
+
+  ul.clean { margin: 8px 0 0; padding: 0; list-style: none; }
+  ul.clean li { position: relative; padding-left: 20px; margin-bottom: 7px; color: var(--muted); }
+  ul.clean li::before {
+    content: ""; position: absolute; left: 4px; top: .72em;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  }
+  ul.clean li b, ul.clean li strong { color: var(--ink); font-weight: 600; }
+
+  code {
+    font-family: var(--mono); font-size: .86em;
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 1.5px 6px; border-radius: 5px;
+    border: 1px solid var(--line);
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; margin: 12px 0 0;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+  pre .c { color: var(--faint); }
+
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; min-width: 520px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  td code { white-space: nowrap; }
+  td.d { color: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 620px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--panel-2);
+    border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 14px 0 0; color: var(--muted);
+  }
+  .callout b { color: var(--ink); }
+
+  hr.soft { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
+  footer { color: var(--faint); font-size: 13px; margin-top: 8px; }
+  footer code { font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">● tcp-kai · v1.0.0</span>
+    <h1>tcp-kai 1.0.0 — переезд на React и большой пакет улучшений</h1>
+    <p class="lede">
+      tcp-kai — десктопный клиент (Tauri) для запросов к NestJS-микросервисам по TCP:
+      коллекция = микросервис, запрос = сохранённый cmd-паттерн, пак переменных = стенд
+      (<code>local</code>/<code>prod</code>). Мажор 1.0.0 — это полностью переписанный на React
+      фронтенд плюс новый CLI, импорт контрактов и «предохранители» для боевых стендов.
+    </p>
+    <div class="meta">
+      <span>1.0.0 → 1.0.4</span>
+      <span>React 19 · Zustand · CodeMirror 6</span>
+      <span>+ CLI tcp-kai (Rust)</span>
+      <span>macOS · Tauri 2</span>
+    </div>
+  </header>
+
+  <!-- 1 -->
+  <h2>1 · Фронтенд переписан со Svelte на React 19</h2>
+  <div class="card">
+    <div class="tag">под капотом</div>
+    <p class="sub">Весь UI мигрирован со Svelte/SvelteKit на React 19 + Vite 8. Внешне приложение то же, но стек стал стандартным и проще в поддержке.</p>
+    <ul class="clean">
+      <li><b>Состояние</b> — единый store на <b>Zustand</b>, разбитый на слайсы (<code>collections</code>, <code>env</code>, <code>history</code>, <code>requests</code>, <code>runner</code>, <code>send</code>, <code>ui</code>) и селекторы вместо самописных Svelte-сторов.</li>
+      <li><b>Редактор</b> — Monaco заменён на <b>CodeMirror 6</b> (<code>@uiw/react-codemirror</code>): легче, свой JSON-линт, подсветка <code>{{vars}}</code> и режим diff для истории.</li>
+      <li><b>Стили</b> — Tailwind v4; иконки — <code>lucide-react</code>.</li>
+      <li>20 компонентов, включая палитру команд (<code>⌘P</code>), сайдбар, переключатель стенда, диалоги окружения, раннер и импорт контрактов.</li>
+    </ul>
+  </div>
+
+  <!-- 2 -->
+  <h2>2 · Новое: CLI <code>tcp-kai</code></h2>
+  <div class="card">
+    <div class="tag">главная фича релиза</div>
+    <p class="sub">Отдельный бинарь на Rust с <b>общей с приложением базой</b>. Тот же запрос, что и кнопка в GUI, но из терминала и скриптов — и он так же попадает в общую историю.</p>
+    <pre><code>tcp-kai coordinator get-domains          <span class="c"># пак — применённый в GUI</span>
+tcp-kai coordinator get-domains -e local <span class="c"># тот же запрос на другой стенд</span>
+echo '{"limit":10}' | tcp-kai whois lookup --json | jq .response
+tcp-kai notifier user-created --emit     <span class="c"># @EventPattern: ответ не ждём</span></code></pre>
+
+    <div class="table-scroll" style="margin-top:16px">
+      <table>
+        <thead><tr><th>Команда</th><th>Что делает</th></tr></thead>
+        <tbody>
+          <tr><td><code>tcp-kai &lt;ms&gt; &lt;cmd&gt;</code></td><td class="d">Отправить сохранённый запрос (шорткат к <code>send</code>)</td></tr>
+          <tr><td><code>tcp-kai ls [ms]</code></td><td class="d">Коллекции или запросы одной коллекции</td></tr>
+          <tr><td><code>tcp-kai envs &lt;ms&gt;</code></td><td class="d">Паки переменных (стенды) и их содержимое</td></tr>
+          <tr><td><code>tcp-kai history &lt;ms&gt; &lt;cmd&gt;</code></td><td class="d">Последние обмены из общей с GUI истории</td></tr>
+          <tr><td><code>tcp-kai import / parse</code></td><td class="d">Наполнить коллекцию из NestJS-контракта (см. ниже)</td></tr>
+          <tr><td><code>tcp-kai completions zsh</code></td><td class="d">Шелл-дополнения</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div>
+        <h3 style="font-size:14px">Ключевые флаги</h3>
+        <ul class="clean">
+          <li><code>-e</code> — разовый выбор стенда (состояние GUI не меняет)</li>
+          <li><code>-d</code> / <code>-f</code> / stdin — тело поверх сохранённого</li>
+          <li><code>--var k=v</code> — разовое значение переменной</li>
+          <li><code>--url host:port</code> — мимо пака целиком</li>
+          <li><code>--json</code> — в stdout только ответ (для <code>jq</code>)</li>
+          <li><code>--timeout</code> — сек, <code>0</code> = ждать вечно (дефолт 60)</li>
+          <li><code>--no-history</code>, <code>-v</code> — не писать в историю / трассировка</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="font-size:14px">Секреты через <code>sec</code></h3>
+        <p class="sub" style="margin:0 0 8px">Токены <b>не хранятся в базе</b>, а приезжают из менеджера секретов <code>sec</code> по флагу <code>--from-sec</code>:</p>
+        <ul class="clean">
+          <li>коллекция <code>coordinator</code> → проект <code>tcp-kai-coordinator</code></li>
+          <li>пак <code>prod</code> → инстанс <code>-e prod</code></li>
+          <li>тянутся только <code>{{name}}</code>, упомянутые в запросе</li>
+          <li>значения идут через stdout, не через argv</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      Установка бинаря — пункт нативного меню <b>tcp-kai → Install CLI…</b> (симлинк в <code>/usr/local/bin</code>, обновляется вместе с приложением). Для агентов есть скилл <code>skills/tcp-kai/SKILL.md</code>.
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <h2>3 · Импорт контрактов из NestJS</h2>
+  <div class="card">
+    <div class="tag">GUI + CLI</div>
+    <p class="sub">Коллекцию можно наполнить прямо из <code>*.contract.ts</code>: парсер находит cmd-реестры (<code>as const</code>-объекты и enum с именем <code>*Cmd*</code>) и контроллеры с <code>@MessagePattern</code>.</p>
+    <pre><code>tcp-kai parse  ../whois/src/contracts/cmd.contract.ts       <span class="c"># что нашлось, без базы</span>
+tcp-kai import whois ../whois/src/contracts/cmd.contract.ts --dry-run
+tcp-kai import whois ../whois/src/contracts/cmd.contract.ts <span class="c"># создать новые запросы</span></code></pre>
+    <ul class="clean" style="margin-top:14px">
+      <li>Существующие запросы <b>не трогаются</b>; чьи <code>cmd</code> ушли из контракта — перечисляются, но не удаляются.</li>
+      <li><code>@deprecated</code> по умолчанию пропускаются (<code>--with-deprecated</code>), лишние контейнеры фильтруются (<code>--all</code> снимает фильтр).</li>
+      <li>В GUI то же самое: <code>⌘P</code> → коллекция → «Импортировать контракт», или просто перетащить <code>.ts</code>-файл в окно.</li>
+    </ul>
+  </div>
+
+  <!-- 4 -->
+  <h2>4 · Таймауты и предохранители для боевых стендов</h2>
+  <div class="grid2">
+    <div class="card">
+      <div class="tag">таймауты</div>
+      <h3>Настраиваемый лимит ожидания</h3>
+      <p class="sub">Захардкоженный таймаут убран. Теперь лимит настраивается (дефолт 60 сек), <code>0</code> — ждать ответа вечно. В CLI — флаг <code>--timeout</code>.</p>
+    </div>
+    <div class="card">
+      <div class="tag">prod-предохранитель</div>
+      <h3>Подтверждение записи на прод</h3>
+      <p class="sub">Если активный пак похож на боевой (<code>prod</code>/<code>live</code>/<code>боев</code>), а <code>cmd</code> похож на запись (<code>create</code>/<code>update</code>/<code>delete</code>/<code>send</code>…) — GUI требует явного подтверждения. Отдельно ловится не-JSON тело, которое транспорт молча превратил бы в <code>data: null</code>.</p>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <h2>5 · Нативное меню и UI-полиш (1.0.1 – 1.0.4)</h2>
+  <div class="card">
+    <ul class="clean">
+      <li><b>Нативное меню macOS</b>: <code>Install CLI…</code>, <code>Check for Updates…</code>, <code>Settings…</code>.</li>
+      <li><b>Кастомный тайтлбар</b> с текущей коллекцией, окружением и историей.</li>
+      <li><b>Палитра команд (<code>⌘P</code>)</b>: быстрое создание команд, создание/переименование коллекций, импорт контракта.</li>
+      <li>Подсказки палитры перенесены в футер (в стиле Raycast); из реквест-бара убран переключатель event-паттерна.</li>
+      <li>Диалоги приведены к единому виду с <code>sql-kai</code>; действия пака вынесены в тулбар правой панели.</li>
+      <li>Новая иконка приложения под маску macOS 26 (без запечённых полей и силуэта).</li>
+    </ul>
+  </div>
+
+  <!-- 6 -->
+  <h2>6 · Сборка и релиз</h2>
+  <div class="card">
+    <p class="sub" style="margin:0">Релиз вынесен в общий модуль <code>../_release</code>: сборка DMG, подпись приложения и апдейтер с ретраями сетевых операций. Доступ к <code>app.db</code> из Rust (<code>db.rs</code>) добавлен ради CLI — у GUI база своя, через <code>plugin-sql</code>.</p>
+  </div>
+
+  <hr class="soft" />
+  <footer>
+    Подробности по CLI — в скилле <code>skills/tcp-kai/SKILL.md</code>. Протокол и подстановка переменных — <code>src-tauri/src/tcp.rs</code> и <code>src-tauri/src/bin/tcp-kai-cli/</code>. База и миграции — <code>src-tauri/src/lib.rs</code>.
+  </footer>
+
+</div>
+</body>
+</html>
