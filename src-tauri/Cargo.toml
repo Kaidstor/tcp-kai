@@ -50,7 +50,7 @@ tauri-plugin-store = "2.2.0"
 tauri-plugin-updater = "2.10"
 tauri-plugin-process = "2.3"
 # keep-alive-демон (src/daemon.rs) общий для GUI и CLI: путь сокета
-dirs = "6"
+dirs = "7"
 # uid в пути сокета; setsid при спавне демона из CLI
 libc = "0.2"
 
