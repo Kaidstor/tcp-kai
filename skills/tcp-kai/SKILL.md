@@ -187,11 +187,13 @@ tcp-kai coordinator auth-login --url 10.0.0.5:18009   # мимо пака цел
 | tcp-kai | sec |
 |---|---|
 | коллекция `coordinator` | проект `tcp-kai-coordinator` |
-| пак `local` / `prod` | инстанс `-e local` / `-e prod` |
+| пак `local` / `prod` | профиль `tcp-kai-coordinator@local` / `@prod` |
+| пак не выбран | базовый набор `tcp-kai-coordinator@` |
 | `{{token}}` | ключ `TOKEN` (регистр не важен) |
 
 ```bash
-sec set tcp-kai-coordinator/TOKEN -e prod      # завести (значение — скрытым вводом)
+sec set tcp-kai-coordinator@prod/TOKEN         # завести (значение — скрытым вводом)
+sec ls tcp-kai-coordinator@prod                # какие ключи увидит пак prod
 tcp-kai coordinator auth-login --from-sec      # подставить
 tcp-kai envs coordinator                       # подскажет имя sec-проекта
 ```

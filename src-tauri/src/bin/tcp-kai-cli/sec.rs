@@ -1,8 +1,8 @@
 //! Тонкая обёртка над CLI `sec` (менеджер секретов) для `--from-sec`.
 //!
-//! Раскладка: коллекция (микросервис) → проект sec, пак (стенд) → инстанс
-//! `-e`, переменная → ключ. То есть `{{token}}` коллекции `coordinator` на
-//! стенде `prod` живёт в `tcp-kai-coordinator/TOKEN -e prod`.
+//! Раскладка: коллекция (микросервис) → проект sec, пак (стенд) → профиль
+//! `@<пак>`, переменная → ключ. То есть `{{token}}` коллекции `coordinator` на
+//! стенде `prod` живёт в `tcp-kai-coordinator@prod/TOKEN`.
 //!
 //! Значения приезжают через stdout дочернего процесса и никогда не идут через
 //! argv — иначе секрет светился бы в `ps` и в истории шелла.
@@ -46,19 +46,25 @@ pub fn project(collection: &str) -> String {
     format!("tcp-kai-{slug}")
 }
 
+/// Адрес набора значений в sec: `<proj>@<пак>`, без пака — `<proj>@`.
+///
+/// Флага `-e` у sec больше нет (с 1.x профиль — часть адреса), а '@' нужен
+/// и без пака: голый `<proj>` у проекта с профилями `sec ls --json` отдаёт
+/// картой профилей вместо ключей, а `get` подставляет default из `.sec`
+/// текущей папки.
+pub fn address(project: &str, env: Option<&str>) -> String {
+    format!("{project}@{}", env.unwrap_or(""))
+}
+
 #[derive(Deserialize)]
 struct KeyRow {
     key: String,
 }
 
-/// Ключи проекта (без значений) — `sec ls <proj> --json`.
-fn keys(project: &str, env: Option<&str>) -> Result<Vec<String>, String> {
-    let mut cmd = base();
-    cmd.arg("ls").arg(project).arg("--json");
-    if let Some(e) = env {
-        cmd.args(["-e", e]);
-    }
-    let out = cmd
+/// Ключи набора (без значений) — `sec ls <proj>@<пак> --json`.
+fn keys(addr: &str) -> Result<Vec<String>, String> {
+    let out = base()
+        .args(["ls", addr, "--json"])
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -70,7 +76,7 @@ fn keys(project: &str, env: Option<&str>) -> Result<Vec<String>, String> {
         let err = envelope_error(&out.stdout)
             .unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string());
         return Err(format!(
-            "sec ls {project}: {}",
+            "sec ls {addr}: {}",
             if err.is_empty() {
                 "проект не найден"
             } else {
@@ -78,7 +84,7 @@ fn keys(project: &str, env: Option<&str>) -> Result<Vec<String>, String> {
             }
         ));
     }
-    parse_keys(&out.stdout).map_err(|e| format!("sec ls {project}: {e}"))
+    parse_keys(&out.stdout).map_err(|e| format!("sec ls {addr}: {e}"))
 }
 
 /// Разбирает ответ `sec ls --json`: голый массив строк до sec с конвертом и
@@ -108,14 +114,11 @@ fn envelope_error(stdout: &[u8]) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Значение ключа — `sec get <proj>/<KEY>`.
-fn get(project: &str, key: &str, env: Option<&str>) -> Result<String, String> {
-    let mut cmd = base();
-    cmd.arg("get").arg(format!("{project}/{key}"));
-    if let Some(e) = env {
-        cmd.args(["-e", e]);
-    }
-    let out = cmd
+/// Значение ключа — `sec get <proj>@<пак>/<KEY>`.
+fn get(addr: &str, key: &str) -> Result<String, String> {
+    let out = base()
+        .arg("get")
+        .arg(format!("{addr}/{key}"))
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -123,7 +126,7 @@ fn get(project: &str, key: &str, env: Option<&str>) -> Result<String, String> {
 
     if !out.status.success() {
         return Err(format!(
-            "sec get {project}/{key}: {}",
+            "sec get {addr}/{key}: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
@@ -131,7 +134,7 @@ fn get(project: &str, key: &str, env: Option<&str>) -> Result<String, String> {
     Ok(value.trim_end_matches('\n').to_string())
 }
 
-/// Значения для переменных `needed` из проекта `project` (инстанс `env`).
+/// Значения для переменных `needed` из набора `addr` (см. [`address`]).
 ///
 /// Тянем только то, что упомянуто в запросе как `{{name}}`: секрет-менеджеру
 /// незачем отдавать ключи, которые запросу не нужны. Имя сопоставляется без
@@ -139,11 +142,11 @@ fn get(project: &str, key: &str, env: Option<&str>) -> Result<String, String> {
 /// писать `HOST`. Ключи, которых в проекте нет, молча пропускаются: значение
 /// возьмётся из пака, а если и там нет — `{{name}}` останется в запросе видимой
 /// дырой.
-pub fn resolve(project: &str, env: Option<&str>, needed: &[String]) -> Result<Vec<EnvVar>, String> {
+pub fn resolve(addr: &str, needed: &[String]) -> Result<Vec<EnvVar>, String> {
     if needed.is_empty() {
         return Ok(Vec::new());
     }
-    let available = keys(project, env)?;
+    let available = keys(addr)?;
     let mut out = Vec::new();
 
     for name in needed {
@@ -154,7 +157,7 @@ pub fn resolve(project: &str, env: Option<&str>, needed: &[String]) -> Result<Ve
             // ключ — под тем именем, под которым он упомянут в запросе,
             // иначе {{host}} не найдёт значение, приехавшее из HOST
             key: name.clone(),
-            value: get(project, key, env)?,
+            value: get(addr, key)?,
         });
     }
     Ok(out)
@@ -178,6 +181,76 @@ mod tests {
         let out = br#"{"v":1,"command":"ls","exit":3,"data":null,"error":{"kind":"not_found","message":"no project"}}"#;
         assert_eq!(envelope_error(out).as_deref(), Some("no project"));
         assert_eq!(envelope_error(b"plain text"), None);
+    }
+
+    /// Граница с настоящим sec: адресация пака и базового набора должна
+    /// совпадать с его текущим CLI-контрактом, а не с нашей моделью.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_reads_pack_profile_from_real_sec() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        if Command::new("sec").arg("version").output().is_err() {
+            eprintln!("sec не найден в PATH — тест границы с sec пропущен");
+            return;
+        }
+        // свой стор, HOME и выдуманный мастер-ключ: настоящий стор, keychain и
+        // журнал обращений тест не трогает
+        let dir = std::env::temp_dir().join(format!("tcp-kai-sec-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wrapper = dir.join("sec");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/sh\nHOME='{d}' SEC_STORE='{d}/store.enc' SEC_KEY={key} SEC_NO_USAGE=1 exec sec \"$@\"\n",
+                d = dir.display(),
+                key = "ab".repeat(32),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let set = |addr: &str, value: &str| {
+            let mut child = Command::new(&wrapper)
+                .args(["set", addr])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(value.as_bytes())
+                .unwrap();
+            assert!(child.wait().unwrap().success(), "sec set {addr}");
+        };
+        set("tcp-kai-svc@prod/HOST", "prod-host");
+        set("tcp-kai-svc@prod/PORT", "8001");
+        set("tcp-kai-svc/HOST", "base-host");
+        std::env::set_var("TCP_KAI_SEC_BIN", &wrapper);
+
+        let needed = vec!["host".to_string(), "port".to_string()];
+        let prod = resolve(&address("tcp-kai-svc", Some("prod")), &needed);
+        let base = resolve(&address("tcp-kai-svc", None), &needed);
+        std::fs::remove_dir_all(&dir).ok();
+
+        let pairs = |vars: Vec<EnvVar>| -> Vec<(String, String)> {
+            vars.into_iter().map(|v| (v.key, v.value)).collect()
+        };
+        assert_eq!(
+            pairs(prod.unwrap()),
+            vec![
+                ("host".to_string(), "prod-host".to_string()),
+                ("port".to_string(), "8001".to_string()),
+            ]
+        );
+        // у проекта есть профили, но без пака нужен базовый набор, а не карта профилей
+        assert_eq!(
+            pairs(base.unwrap()),
+            vec![("host".to_string(), "base-host".to_string())]
+        );
     }
 
     #[test]
