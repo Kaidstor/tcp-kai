@@ -258,13 +258,15 @@ pub async fn run(args: SendArgs, p: &mut Printer) -> Result<Done, CliError> {
 
     // источники переменных, по возрастанию приоритета: пак → sec → --var
     let mut env: Vec<EnvVar> = pack.map(|p| p.vars.clone()).unwrap_or_default();
-    if args.from_sec {
-        let project = sec::project(&collection.name);
+    let sec_addr = args.from_sec.then(|| {
+        sec::address(
+            &sec::project(&collection.name),
+            pack.map(|p| p.name.as_str()),
+        )
+    });
+    if let Some(addr) = &sec_addr {
         let needed = needed_vars(&url_tpl, &body_tpl);
-        env.extend(
-            sec::resolve(&project, pack.map(|p| p.name.as_str()), &needed)
-                .map_err(CliError::config)?,
-        );
+        env.extend(sec::resolve(addr, &needed).map_err(CliError::config)?);
     }
     for kv in &args.var {
         let (key, value) = super::split_var(kv)?;
@@ -277,10 +279,13 @@ pub async fn run(args: SendArgs, p: &mut Printer) -> Result<Done, CliError> {
     // до подключения: иначе вместо «нет переменной» будет «не резолвится хост»
     let unresolved = vars::placeholders(&connection);
     if !unresolved.is_empty() {
-        let where_from = match pack {
+        let mut where_from = match pack {
             Some(p) => format!("в паке «{}» их нет", p.name),
             None => "у коллекции не выбран пак".to_string(),
         };
+        if let Some(addr) = &sec_addr {
+            where_from.push_str(&format!(", в sec {addr} тоже"));
+        }
         return Err(CliError::config(format!(
             "строка подключения осталась с {}: {where_from}.\nЗадай их в приложении, через --url HOST:PORT, --var или --from-sec",
             unresolved
