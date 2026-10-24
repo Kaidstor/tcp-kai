@@ -42,7 +42,7 @@ pub struct SendArgs {
     #[arg(long = "var", value_name = "K=V")]
     pub var: Vec<String>,
 
-    /// Дотянуть переменные из sec: проект tcp-kai-<ms>, инстанс — пак
+    /// Дотянуть переменные из sec: tcp-kai-<ms>@<пак>
     #[arg(long = "from-sec")]
     pub from_sec: bool,
 
