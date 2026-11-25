@@ -14,5 +14,6 @@ PM=pnpm
 FORGE=github
 # автобамп Homebrew-каска (version/sha256 + push tap) после публикации
 BREW_CASK=../homebrew-tap/Casks/tcp-kai.rb
+DMG_ACCENT="#22F3FF"
 
 source ../_release/tauri-release.sh
